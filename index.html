@@ -1,0 +1,317 @@
+<style>
+fieldset.structure {
+	border: 0;
+	padding: 0;
+	margin: 0;
+}
+fieldset, button {
+	margin: 1em 0;
+}
+</style>
+
+<p>Drag a config file (with collections) on here. And after choosing a collection, a markdown/content file.</p>
+
+<div id="create-buttons"></div>
+
+<form>
+	<div></div>
+	<button>Save</button>
+</form>
+
+<script src="https://unpkg.com/js-yaml@3.12.0/dist/js-yaml.js"></script>
+<script>
+// Load config.yml for fields
+// Load post md file to edit, or
+// Create new collection item
+
+async function parseContent(file) {
+	const text = await file.text();
+
+	if (!file.name.match(/\.md$/i)) return;
+
+	const frontMatter = text.match(/^---\n([\w\W]+?)---\n/);
+	const body = text.substr(frontMatter[0].length).trim();
+	return {body, ...parseFrontMatterYaml(frontMatter[1])};
+}
+
+function parseFrontMatterYaml(text) {
+	return jsyaml.load(text, {schema: jsyaml.JSON_SCHEMA});
+}
+
+async function parseConfig(file) {
+	const text = await file.text();
+
+	if (file.name.match(/\.ya?ml$/)) {
+		return parseConfigYaml(text);
+	}
+}
+
+function parseConfigYaml(text) {
+	return jsyaml.load(text, {schema: jsyaml.JSON_SCHEMA});
+}
+
+function extractCollections(config) {
+	if (config.collections && config.collections[0] && config.collections[0].fields && config.collections[0].fields[0]) {
+		return extractCollectionsArray(config.collections);
+	}
+
+	if (config.collections && config.collections.length == null) {
+		const key = Object.keys(config.collections)[0];
+		if (config.collections[key].fields && config.collections[key].fields.length == null) {
+			return extractCollectionsObject(config.collections);
+		}
+	}
+}
+
+function extractCollectionsObject(object) {
+	for (let cname in object) {
+		const collection = object[cname];
+		collection.label = collection.label || collection.name || cname;
+		extractFieldsObject(collection.fields);
+	}
+
+	return object;
+}
+
+function extractFieldsObject(object) {
+	for (let fname in object) {
+		const field = object[fname];
+		field.widget = field.widget || field.type || 'string';
+		delete field.type;
+		field.label = field.label || field.name || fname;
+		delete field.name;
+		field.required = field.required == null ? true : field.required;
+		field.fields && extractFieldsObject(field.fields);
+	}
+	return object;
+}
+
+function extractCollectionsArray(array) {
+	const collections = {};
+	for (let collection of array) {
+		if (collection.fields) {
+			collections[collection.name] = {
+				label: collection.label,
+				fields: extractFieldsArray(collection.fields),
+			};
+		}
+		else if (collection.files) {
+			for (let file of collection.files) {
+				collections[collection.name + ':' + file.name] = {
+					label: file.label || (collection.label + ' - ' + file.name),
+					fields: extractFieldsArray(file.fields),
+				};
+			}
+		}
+	}
+
+	return collections;
+}
+
+function extractFieldsArray(array) {
+	const fields = {};
+	for (let field of array) {
+		fields[field.name] = field;
+		if (field.fields) {
+			field.fields = extractFieldsArray(field.fields);
+		}
+		else if (field.field && field.field.name) {
+			field.fields = {[field.field.name]: field.field};
+			delete field.field;
+		}
+	}
+
+	return fields;
+}
+
+// ==== //
+
+const randomChar = () => String.fromCodePoint(65 + parseInt(26 * Math.random()));
+
+const getInputValue = el => el.querySelector('input, textarea').value;
+const setInputValue = (el, val) => el.querySelector('input, textarea').value = val;
+const WIDGETS = {
+	string: {
+		create(props) {
+			return createInput();
+		},
+		setValue : setInputValue,
+		getValue: getInputValue,
+	},
+	date: {
+		create(props) {
+			return createInput('date');
+		},
+		setValue : setInputValue,
+		getValue: getInputValue,
+	},
+	number: {
+		create(props) {
+			return createInput('number');
+		},
+		setValue : setInputValue,
+		getValue: getInputValue,
+	},
+	file: {
+		create(props) {
+			return createInput('text');
+		},
+		setValue: setInputValue,
+		getValue: getInputValue,
+	},
+	text: {
+		create(props) {
+			const el = document.createElement('textarea');
+			el.value = randomChar();
+			return el;
+		},
+		setValue: setInputValue,
+		getValue: getInputValue,
+	},
+	list: {
+		create(props) {
+			return createFieldset(props.fields, 'Item 0');
+		},
+		setValue(el, value) {
+
+		},
+		getValue(el) {
+			const items = Array.from(el.querySelectorAll(':scope > fieldset'));
+			return items.map(fs => getFieldsetValues(fs));
+		},
+	},
+	object: {
+		create(props) {
+			return createFieldset(props.fields);
+		},
+		setValue(el, value) {
+
+		},
+		getValue(el) {
+			return getFieldsetValues(el.querySelector('fieldset'));
+		},
+	},
+};
+WIDGETS.markdown = WIDGETS.text;
+WIDGETS.image = WIDGETS.file;
+
+function createButtons() {
+	elCreateButtons.innerHTML = '';
+	for (let cname in g_collections) {
+		const btn = document.createElement('button');
+		btn.textContent = g_collections[cname].label;
+		btn.dataset.collection = cname;
+		elCreateButtons.append(btn);
+		elCreateButtons.append(' ');
+	}
+}
+
+function createForm(cname) {
+	elForm.innerHTML = '';
+	elForm.append(createFieldset(g_collections[cname].fields, g_collections[cname].label));
+	g_collection = cname;
+}
+
+function createFieldset(fields, title) {
+	const fs = document.createElement('fieldset');
+
+	if (title) {
+		const leg = document.createElement('legend');
+		leg.textContent = title;
+		fs.append(leg);
+	}
+	else {
+		fs.classList.add('structure');
+	}
+
+	for (let fname in fields) {
+		const field = fields[fname];
+		const row = document.createElement('fieldset');
+		row.dataset.widget = field.widget;
+		row.dataset.name = fname;
+		fs.append(row);
+		const leg = document.createElement('legend');
+		leg.textContent = field.label;
+		row.append(leg);
+		row.append(createWidget(field));
+	}
+	return fs;
+}
+
+function createWidget(field) {
+	const handler = WIDGETS[field.widget];
+	if (handler) {
+		return handler.create(field);
+	}
+
+	return document.createTextNode(' ' + field.widget);
+}
+
+function createInput(type) {
+	const el = document.createElement('input');
+	el.type = type || 'text';
+	if (el.type != 'file') {
+		el.value = randomChar();
+	}
+	return el;
+}
+
+function setFieldsetValues(fs, values) {
+
+}
+
+function getFieldsetValues(fs) {
+	const values = {};
+	for (let el of fs.querySelectorAll(':scope > fieldset[data-widget][data-name]')) {
+		const handler = WIDGETS[el.dataset.widget];
+		values[el.dataset.name] = handler.getValue(el);
+	}
+	return values;
+}
+
+// ==== //
+
+const elCreateButtons = document.querySelector('#create-buttons');
+const elForm = document.querySelector('form > div');
+
+var g_collections = {};
+var g_collection = '';
+
+elCreateButtons.addEventListener('click', e => {
+	const btn = e.target.closest('button');
+	if (btn && btn.dataset.collection) {
+		createForm(btn.dataset.collection);
+	}
+});
+
+elForm.closest('form').addEventListener('submit', e => {
+	e.preventDefault();
+	const fs = elForm.querySelector('fieldset');
+	const values = getFieldsetValues(fs);
+	console.log(values);
+	console.log(jsyaml.dump(values));
+});
+
+document.addEventListener('dragover', e => {
+	e.preventDefault();
+});
+document.addEventListener('drop', async e => {
+	e.preventDefault();
+	const file = e.dataTransfer.files[0];
+	const config = await parseConfig(file);
+	if (config) {
+		g_collections = extractCollections(config);
+console.log(g_collections);
+		g_collection = '';
+		elForm.innerHTML = '';
+		return createButtons();
+	}
+
+	if (g_collection) {
+		const content = await parseContent(file);
+console.log(content);
+		const fs = elForm.querySelector('fieldset');
+		setFieldsetValues(fs, content);
+	}
+});
+</script>
