@@ -13,11 +13,26 @@ fieldset, button {
 }
 </style>
 
-<p>Drag a config file (with collections) on here. And after choosing a collection, a markdown/content file.</p>
+<!-- <p>Drag a config file (with collections) on here. And after choosing a collection, a markdown/content file.</p> -->
 
-<div id="create-buttons"></div>
+<form id="config">
+	Config:
+	<select>
+		<option>rudiedirkx/dipcorp2/master</option>
+		<option>rudiedirkx2/netlify1-hugo</option>
+		<option>rudiedirkx2/netlify2-jekyll</option>
+	</select>
+	<button>Load</button>
+</form>
 
-<form>
+<form id="page">
+	<select></select>
+	<button>Load</button>
+	|
+	<span id="create-buttons"></span>
+</form>
+
+<form id="content">
 	<div></div>
 	<button>Save</button>
 </form>
@@ -28,12 +43,10 @@ fieldset, button {
 // Load post md file to edit, or
 // Create new collection item
 
-async function parseContent(file) {
-	const text = await file.text();
-
-	if (!file.name.match(/\.md$/i)) return;
-
+function parseContent(text) {
 	const frontMatter = text.match(/^---\n([\w\W]+?)---\n/);
+	if (!frontMatter) return {};
+
 	const body = text.substr(frontMatter[0].length).trim();
 	return {body, ...parseFrontMatterYaml(frontMatter[1])};
 }
@@ -42,12 +55,14 @@ function parseFrontMatterYaml(text) {
 	return jsyaml.load(text, {schema: jsyaml.JSON_SCHEMA});
 }
 
-async function parseConfig(file) {
+async function loadConfigFromFile(file) {
 	const text = await file.text();
+	return loadConfigFromText(text);
+}
 
-	if (file.name.match(/\.ya?ml$/)) {
-		return parseConfigYaml(text);
-	}
+async function loadContentFromFile(file) {
+	const text = await file.text();
+	return loadContentFromText(text);
 }
 
 function parseConfigYaml(text) {
@@ -65,6 +80,8 @@ function extractCollections(config) {
 			return extractCollectionsObject(config.collections);
 		}
 	}
+
+	return {};
 }
 
 function extractCollectionsObject(object) {
@@ -216,8 +233,7 @@ const WIDGETS = {
 			return createFieldset(props.fields);
 		},
 		setValue(el, props, value) {
-			console.log('object', el, value);
-			setFieldsetValues(el.querySelector('fieldset'), value);
+			setFieldsetValues(el.querySelector('fieldset'), value || {});
 		},
 		getValue(el, props) {
 			return getFieldsetValues(el.querySelector('fieldset'));
@@ -239,8 +255,8 @@ function createButtons() {
 }
 
 function createForm(cname) {
-	elForm.innerHTML = '';
-	elForm.append(createFieldset(g_collections[cname].fields, g_collections[cname].label));
+	elContentForm.innerHTML = '';
+	elContentForm.append(createFieldset(g_collections[cname].fields, g_collections[cname].label));
 	g_collection = cname;
 }
 
@@ -308,22 +324,76 @@ function getFieldsetValues(fs) {
 
 // ==== //
 
-const elCreateButtons = document.querySelector('#create-buttons');
-const elForm = document.querySelector('form > div');
-
 var g_collections = {};
 var g_collection = '';
+
+async function loadConfigFromText(text) {
+	const config = parseConfigYaml(text);
+	g_collections = extractCollections(config);
+	g_collection = '';
+	elContentForm.innerHTML = '';
+	createButtons();
+	return g_collections;
+}
+
+async function loadContentFromText(text) {
+	const values = parseContent(text);
+	const fs = elContentForm.querySelector('fieldset');
+	setFieldsetValues(fs, values);
+	return values;
+}
+
+// ==== //
+
+const elCreateButtons = document.querySelector('#create-buttons');
+const elContentForm = document.querySelector('form#content > div');
+const elConfigForm = document.querySelector('form#config');
+const elPageForm = document.querySelector('form#page');
+
+elConfigForm.addEventListener('submit', e => {
+	e.preventDefault();
+	const m = elConfigForm.querySelector('input, select').value.match(/^([^\/]+\/[^\/]+)(?:(\/[^\/]+))?$/);
+console.log(m);
+	const url = `https://api.github.com/repos/${m[1]}/git/trees/${m[2]||'master'}?recursive=1`;
+console.log(url);
+	const finder = names => file => names.includes(file.path);
+	fetch(url).then(rsp => rsp.json()).then(rsp => {
+		const cfgFile = null ||
+			rsp.tree.find(finder(['admin/config.yml', 'site/static/admin/config.yml'])) ||
+			rsp.tree.find(finder(['_config.yml']));
+		// Extract config
+		fetch(cfgFile.url).then(rsp => rsp.json()).then(rsp => {
+			loadConfigFromText(atob(rsp.content)).then(x => console.log('config from github', x));
+		});
+		// Load pages
+		const pages = rsp.tree.filter(file => file.path.match(/\.(md|html)$/i) && !file.path.match(/(^|\/)_?layouts\//));
+		console.log('pages', pages);
+		const select = elPageForm.querySelector('select');
+		select.innerHTML = pages.map(file => `<option value="${file.url}">${file.path}</option>`).join('');
+	});
+});
+
+elPageForm.addEventListener('submit', e => {
+	e.preventDefault();
+	const url = elPageForm.querySelector('select').value;
+	fetch(url).then(rsp => rsp.json()).then(rsp => {
+		const text = atob(rsp.content.trim());
+console.log(text);
+		loadContentFromText(text);
+	});
+});
 
 elCreateButtons.addEventListener('click', e => {
 	const btn = e.target.closest('button');
 	if (btn && btn.dataset.collection) {
+		e.preventDefault();
 		createForm(btn.dataset.collection);
 	}
 });
 
-elForm.closest('form').addEventListener('submit', e => {
+elContentForm.closest('form').addEventListener('submit', e => {
 	e.preventDefault();
-	const fs = elForm.querySelector('fieldset');
+	const fs = elContentForm.querySelector('fieldset');
 	const values = getFieldsetValues(fs);
 	console.log(values);
 	console.log(jsyaml.dump(values));
@@ -335,20 +405,13 @@ document.addEventListener('dragover', e => {
 document.addEventListener('drop', async e => {
 	e.preventDefault();
 	const file = e.dataTransfer.files[0];
-	const config = await parseConfig(file);
-	if (config) {
-		g_collections = extractCollections(config);
-console.log(g_collections);
-		g_collection = '';
-		elForm.innerHTML = '';
-		return createButtons();
+
+	if (file.name.match(/\.ya?ml$/i)) {
+		return loadConfigFromFile(file).then(x => console.log('config from file drop', x));
 	}
 
-	if (g_collection) {
-		const content = await parseContent(file);
-console.log(content);
-		const fs = elForm.querySelector('fieldset');
-		setFieldsetValues(fs, content);
+	if (file.name.match(/\.(md|html)$/i) && g_collection) {
+		return loadContentFromFile(file).then(x => console.log('content from file drop', x));
 	}
 });
 </script>
