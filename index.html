@@ -52,7 +52,7 @@ const get = url => fetch(new Request(url, {headers: {"Authorization": `token ${T
 // Create new collection item
 
 function parseContent(text) {
-	const frontMatter = text.match(/^---\n([\w\W]+?)---\n/);
+	const frontMatter = text.match(/^---[\r\n]+([\w\W]+?)---([\r\n]|$)/);
 	if (!frontMatter) return {};
 
 	const body = text.substr(frontMatter[0].length).trim();
@@ -382,9 +382,7 @@ const elPageForm = document.querySelector('form#page');
 elConfigForm.addEventListener('submit', e => {
 	e.preventDefault();
 	const m = elConfigForm.querySelector('input, select').value.match(/^([^\/]+\/[^\/]+)(?:(\/[^\/]+))?$/);
-console.log(m);
 	const url = `https://api.github.com/repos/${m[1]}/git/trees/${m[2]||'master'}?recursive=1`;
-console.log(url);
 	const finder = names => file => names.includes(file.path);
 	get(url).then(rsp => rsp.json()).then(rsp => {
 		const cfgFile = null ||
@@ -396,7 +394,6 @@ console.log(url);
 		});
 		// Load pages
 		const pages = rsp.tree.filter(file => file.path.match(/\.(md|html)$/i) && !file.path.match(/(^|\/)_?layouts\//));
-		console.log('pages', pages);
 		const select = elPageForm.querySelector('select');
 		select.innerHTML = pages.map(file => `<option value="${file.url}">${file.path}</option>`).join('');
 	});
@@ -406,9 +403,8 @@ elPageForm.addEventListener('submit', e => {
 	e.preventDefault();
 	const url = elPageForm.querySelector('select').value;
 	get(url).then(rsp => rsp.json()).then(rsp => {
-		const text = atob(rsp.content.trim());
-console.log(text);
-		loadContentFromText(text);
+		const text = decodeURIComponent(escape(atob(rsp.content.trim())));
+		loadContentFromText(text).then(x => console.log('content from github', x));
 	});
 });
 
