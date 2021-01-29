@@ -7,6 +7,10 @@ fieldset.structure {
 fieldset, button {
 	margin: 1em 0;
 }
+
+.widget[data-widget="hidden"] {
+	display: none;
+}
 </style>
 
 <p>Drag a config file (with collections) on here. And after choosing a collection, a markdown/content file.</p>
@@ -68,6 +72,7 @@ function extractCollectionsObject(object) {
 		const collection = object[cname];
 		collection.label = collection.label || collection.name || cname;
 		extractFieldsObject(collection.fields);
+		ensureCollectionBody(collection.fields);
 	}
 
 	return object;
@@ -83,6 +88,7 @@ function extractFieldsObject(object) {
 		field.required = field.required == null ? true : field.required;
 		field.fields && extractFieldsObject(field.fields);
 	}
+
 	return object;
 }
 
@@ -94,13 +100,16 @@ function extractCollectionsArray(array) {
 				label: collection.label,
 				fields: extractFieldsArray(collection.fields),
 			};
+			ensureCollectionBody(collections[collection.name].fields);
 		}
 		else if (collection.files) {
 			for (let file of collection.files) {
-				collections[collection.name + ':' + file.name] = {
+				const cname = collection.name + ':' + file.name;
+				collections[cname] = {
 					label: file.label || (collection.label + ' - ' + file.name),
 					fields: extractFieldsArray(file.fields),
 				};
+				ensureCollectionBody(collections[cname].fields);
 			}
 		}
 	}
@@ -124,13 +133,26 @@ function extractFieldsArray(array) {
 	return fields;
 }
 
+function ensureCollectionBody(fields) {
+	if (!fields.body) {
+		fields.body = {widget: 'hidden', label: '~body~'};
+	}
+}
+
 // ==== //
 
 const randomChar = () => String.fromCodePoint(65 + parseInt(26 * Math.random()));
 
-const getInputValue = el => el.querySelector('input, textarea').value;
-const setInputValue = (el, val) => el.querySelector('input, textarea').value = val;
+const getInputValue = (el, props) => el.querySelector('input, textarea').value;
+const setInputValue = (el, props, val) => el.querySelector('input, textarea').value = val == null ? '' : val;
 const WIDGETS = {
+	hidden: {
+		create(props) {
+			return document.createElement('textarea');
+		},
+		setValue : setInputValue,
+		getValue: getInputValue,
+	},
 	string: {
 		create(props) {
 			return createInput();
@@ -170,12 +192,21 @@ const WIDGETS = {
 	},
 	list: {
 		create(props) {
-			return createFieldset(props.fields, 'Item 0');
+			return createFieldset(props.fields, 'Item 1');
 		},
-		setValue(el, value) {
+		setValue(el, props, value) {
+			if (!value || !value.length) return;
 
+			el.querySelectorAll(':scope > fieldset').forEach(fs => fs.remove());
+
+			const L = value.length || 1;
+			for ( let n = 0; n < L; n++ ) {
+				const fs = createFieldset(props.fields, `Item ${n+1}`);
+				el.append(fs);
+				setFieldsetValues(fs, value[n]);
+			}
 		},
-		getValue(el) {
+		getValue(el, props) {
 			const items = Array.from(el.querySelectorAll(':scope > fieldset'));
 			return items.map(fs => getFieldsetValues(fs));
 		},
@@ -184,10 +215,11 @@ const WIDGETS = {
 		create(props) {
 			return createFieldset(props.fields);
 		},
-		setValue(el, value) {
-
+		setValue(el, props, value) {
+			console.log('object', el, value);
+			setFieldsetValues(el.querySelector('fieldset'), value);
 		},
-		getValue(el) {
+		getValue(el, props) {
 			return getFieldsetValues(el.querySelector('fieldset'));
 		},
 	},
@@ -227,6 +259,8 @@ function createFieldset(fields, title) {
 	for (let fname in fields) {
 		const field = fields[fname];
 		const row = document.createElement('fieldset');
+		row._field = field;
+		row.classList.add('widget');
 		row.dataset.widget = field.widget;
 		row.dataset.name = fname;
 		fs.append(row);
@@ -257,14 +291,17 @@ function createInput(type) {
 }
 
 function setFieldsetValues(fs, values) {
-
+	for (let el of fs.querySelectorAll(':scope > fieldset[data-widget][data-name]')) {
+		const handler = WIDGETS[el.dataset.widget];
+		handler.setValue(el, el._field, values[el.dataset.name]);
+	}
 }
 
 function getFieldsetValues(fs) {
 	const values = {};
 	for (let el of fs.querySelectorAll(':scope > fieldset[data-widget][data-name]')) {
 		const handler = WIDGETS[el.dataset.widget];
-		values[el.dataset.name] = handler.getValue(el);
+		values[el.dataset.name] = handler.getValue(el, el._field);
 	}
 	return values;
 }
