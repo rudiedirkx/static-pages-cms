@@ -11,6 +11,11 @@ fieldset, button {
 .widget[data-widget="hidden"] {
 	display: none;
 }
+
+input[type="text"],
+textarea {
+	width: 700px;
+}
 </style>
 
 <!-- <p>Drag a config file (with collections) on here. And after choosing a collection, a markdown/content file.</p> -->
@@ -29,7 +34,7 @@ fieldset, button {
 	<select></select>
 	<button>Load</button>
 	|
-	<span id="create-buttons"></span>
+	Open: <span id="create-buttons"></span>
 </form>
 
 <form id="content">
@@ -39,6 +44,9 @@ fieldset, button {
 
 <script src="https://unpkg.com/js-yaml@3.12.0/dist/js-yaml.js"></script>
 <script>
+var TOKEN = localStorage.staticPagesCmsToken || 'x';
+const get = url => fetch(new Request(url, {headers: {"Authorization": `token ${TOKEN}`}}));
+
 // Load config.yml for fields
 // Load post md file to edit, or
 // Create new collection item
@@ -160,8 +168,8 @@ function ensureCollectionBody(fields) {
 
 const randomChar = () => String.fromCodePoint(65 + parseInt(26 * Math.random()));
 
-const getInputValue = (el, props) => el.querySelector('input, textarea').value;
-const setInputValue = (el, props, val) => el.querySelector('input, textarea').value = val == null ? '' : val;
+const getInputValue = (el, props) => el.querySelector('input, select, textarea').value;
+const setInputValue = (el, props, val) => el.querySelector('input, select, textarea').value = val == null ? '' : val;
 const WIDGETS = {
 	hidden: {
 		create(props) {
@@ -184,6 +192,13 @@ const WIDGETS = {
 		setValue : setInputValue,
 		getValue: getInputValue,
 	},
+	datetime: {
+		create(props) {
+			return createInput('datetime');
+		},
+		setValue : setInputValue,
+		getValue: getInputValue,
+	},
 	number: {
 		create(props) {
 			return createInput('number');
@@ -194,6 +209,20 @@ const WIDGETS = {
 	file: {
 		create(props) {
 			return createInput('text');
+		},
+		setValue: setInputValue,
+		getValue: getInputValue,
+	},
+	select: {
+		create(props) {
+			const sel = document.createElement('select');
+			[{value: '', label: '--'}, ...(props.options || [])].forEach(opt => {
+				const el = document.createElement('option');
+				el.value = opt.value || opt.label;
+				el.textContent = opt.label || opt.value;
+				sel.append(el);
+			});
+			return sel;
 		},
 		setValue: setInputValue,
 		getValue: getInputValue,
@@ -357,12 +386,12 @@ console.log(m);
 	const url = `https://api.github.com/repos/${m[1]}/git/trees/${m[2]||'master'}?recursive=1`;
 console.log(url);
 	const finder = names => file => names.includes(file.path);
-	fetch(url).then(rsp => rsp.json()).then(rsp => {
+	get(url).then(rsp => rsp.json()).then(rsp => {
 		const cfgFile = null ||
 			rsp.tree.find(finder(['admin/config.yml', 'site/static/admin/config.yml'])) ||
 			rsp.tree.find(finder(['_config.yml']));
 		// Extract config
-		fetch(cfgFile.url).then(rsp => rsp.json()).then(rsp => {
+		get(cfgFile.url).then(rsp => rsp.json()).then(rsp => {
 			loadConfigFromText(atob(rsp.content)).then(x => console.log('config from github', x));
 		});
 		// Load pages
@@ -376,7 +405,7 @@ console.log(url);
 elPageForm.addEventListener('submit', e => {
 	e.preventDefault();
 	const url = elPageForm.querySelector('select').value;
-	fetch(url).then(rsp => rsp.json()).then(rsp => {
+	get(url).then(rsp => rsp.json()).then(rsp => {
 		const text = atob(rsp.content.trim());
 console.log(text);
 		loadContentFromText(text);
