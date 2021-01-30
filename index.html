@@ -1,5 +1,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <script>
+const DEV = true;
+
 const GH_APP_ID = '1a620656396aa0d6b5c2';
 const TOKEN = sessionStorage.staticPagesCmsToken || '';
 const ghAuth = {
@@ -28,11 +30,12 @@ const ghAuth = {
 			const query = new URLSearchParams(location.search);
 			const code = query.get('code');
 			if (code) {
+				document.body.dataset.state = 'authenticating';
 				this.token(code);
 			}
 		}
 		else {
-			document.body.classList.add('authenticated');
+			document.body.dataset.state = 'authenticated';
 			return true;
 		}
 	},
@@ -40,8 +43,11 @@ const ghAuth = {
 </script>
 
 <style>
-body:not(.authenticated) #gh-auth ~ *,
-body.authenticated #gh-auth {
+body:not([data-state="authenticated"]) #gh-auth ~ *,
+body:not([data-state]) #gh-authing,
+body[data-state="authenticated"] #gh-auth,
+body[data-state="authenticating"] #gh-auth,
+body[data-state="authenticated"] #gh-authing {
 	display: none;
 }
 
@@ -62,9 +68,14 @@ input[type="text"],
 textarea {
 	width: 700px;
 }
+textarea {
+	height: 70px;
+}
 </style>
 
 <!-- <p>Drag a config file (with collections) on here. And after choosing a collection, a markdown/content file.</p> -->
+
+<p id="gh-authing">Finishing up Github authentication...</p>
 
 <div id="gh-auth">
 	<button onclick="ghAuth.start()">Authenticate with Github</button>
@@ -73,7 +84,11 @@ textarea {
 <form id="config">
 	Config:
 	<select>
-		<option>loading...</option>
+		<option>rudiedirkx2/netlify1-hugo</option>
+		<option>rudiedirkx2/netlify2-jekyll</option>
+		<option>rudiedirkx/dipcorp2:master</option>
+		<option>rudiedirkx2/tugboat-sqlite</option>
+		<option>Loading...</option>
 	</select>
 	<button>Load</button>
 </form>
@@ -91,15 +106,15 @@ textarea {
 </form>
 
 <script>
-window.addEventListener('load', e => ghAuth.process() && loadRepos());
+window.addEventListener('load', e => ghAuth.process() && !DEV && loadRepos());
 </script>
-<script async src="https://unpkg.com/js-yaml@3.12.0/dist/js-yaml.js"></script>
+<script async defer src="https://unpkg.com/js-yaml@3.12.0/dist/js-yaml.js"></script>
 <script>
 const get = url => fetch(new Request(url, {headers: {"Authorization": `token ${TOKEN}`}})).then(x => x.json());
 
 function parseContent(text) {
 	const frontMatter = text.match(/^---[\r\n]+([\w\W]+?)---([\r\n]|$)/);
-	if (!frontMatter) return {};
+	if (!frontMatter) throw new Error("Can't extract front matter from text:\n" + text);
 
 	const body = text.substr(frontMatter[0].length).trim();
 	return {body, ...parseFrontMatterYaml(frontMatter[1])};
@@ -216,7 +231,7 @@ function loadRepos() {
 			sel.innerHTML = '';
 			rsp.forEach(repo => {
 				const el = document.createElement('option');
-				el.value = repo.full_name + '/' + repo.default_branch;
+				el.value = repo.full_name + ':' + repo.default_branch;
 				el.textContent = repo.full_name;
 				sel.append(el);
 			});
@@ -427,7 +442,7 @@ async function loadConfigFromText(text) {
 async function loadContentFromText(text) {
 	const values = parseContent(text);
 	const fs = elContentForm.querySelector('fieldset');
-	setFieldsetValues(fs, values);
+	fs && setFieldsetValues(fs, values || {});
 	return values;
 }
 
@@ -440,17 +455,22 @@ const elPageForm = document.querySelector('form#page');
 
 elConfigForm.addEventListener('submit', e => {
 	e.preventDefault();
-	const m = elConfigForm.querySelector('input, select').value.match(/^([^\/]+\/[^\/]+)(?:(\/[^\/]+))?$/);
-	const url = `https://api.github.com/repos/${m[1]}/git/trees/${m[2]||'master'}?recursive=1`;
+	const repo = elConfigForm.querySelector('input, select').value;
+	const pieces = repo.split(':');
+	const url = `https://api.github.com/repos/${pieces[0]}/git/trees/${pieces[1]||'master'}?recursive=1`;
 	const finder = names => file => names.includes(file.path);
 	get(url).then(rsp => {
+		if (!rsp.tree) throw new Error(`Can't find files in repo '${repo}'`);
 		const cfgFile = null ||
 			rsp.tree.find(finder(['admin/config.yml', 'site/static/admin/config.yml'])) ||
 			rsp.tree.find(finder(['_config.yml']));
+		if (!cfgFile) throw new Error(`Can't find config file in repo '${repo}'`);
+
 		// Extract config
 		get(cfgFile.url).then(rsp => {
 			loadConfigFromText(atob(rsp.content)).then(x => console.log('config from github', x));
 		});
+
 		// Load pages
 		const pages = rsp.tree.filter(file => file.path.match(/\.(md|html)$/i) && !file.path.match(/(^|\/)_?layouts\//));
 		const select = elPageForm.querySelector('select');
@@ -480,7 +500,9 @@ elContentForm.closest('form').addEventListener('submit', e => {
 	const fs = elContentForm.querySelector('fieldset');
 	const values = getFieldsetValues(fs);
 	console.log(values);
-	console.log(jsyaml.dump(values));
+	const {body, ...fm} = values;
+	const md = `---\n${jsyaml.dump(fm).trim()}\n---\n\n${body}\n`
+	console.log(md);
 });
 
 document.addEventListener('dragover', e => {
