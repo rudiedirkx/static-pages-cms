@@ -1,4 +1,48 @@
+<script>
+const GH_APP_ID = '1a620656396aa0d6b5c2';
+const TOKEN = sessionStorage.staticPagesCmsToken || '';
+const ghAuth = {
+	redirectURL() {
+		return location.href.replace(/[?#].+/g, '');
+	},
+	start() {
+		sessionStorage.staticPagesCmsAuthState = Math.random();
+		location.href = `https://github.com/login/oauth/authorize?client_id=${GH_APP_ID}&redirect_uri=${encodeURIComponent(this.redirectURL())}&state=${sessionStorage.staticPagesCmsAuthState}&scope=public_repo`;
+	},
+	token(code) {
+		const body = new FormData();
+		body.set('state', sessionStorage.staticPagesCmsAuthState);
+		body.set('code', code);
+		fetch(new Request('https://static-pages-cms-github-token.herokuapp.com/', {
+			method: 'post',
+			body,
+		})).then(rsp => rsp.json()).then(rsp => {
+			sessionStorage.staticPagesCmsToken = rsp.access_token;
+			delete sessionStorage.staticPagesCmsAuthState;
+			location.href = this.redirectURL();
+		});
+	},
+	process() {
+		if (!TOKEN) {
+			const query = new URLSearchParams(location.search);
+			const code = query.get('code');
+			if (code) {
+				this.token(code);
+			}
+		}
+		else {
+			document.body.classList.add('authenticated');
+		}
+	},
+};
+</script>
+
 <style>
+body:not(.authenticated) #gh-auth ~ *,
+body.authenticated #gh-auth {
+	display: none;
+}
+
 fieldset.structure {
 	border: 0;
 	padding: 0;
@@ -19,6 +63,10 @@ textarea {
 </style>
 
 <!-- <p>Drag a config file (with collections) on here. And after choosing a collection, a markdown/content file.</p> -->
+
+<div id="gh-auth">
+	<button onclick="ghAuth.start()">Authenticate with Github</button>
+</div>
 
 <form id="config">
 	Config:
@@ -42,14 +90,12 @@ textarea {
 	<button>Save</button>
 </form>
 
-<script src="https://unpkg.com/js-yaml@3.12.0/dist/js-yaml.js"></script>
 <script>
-var TOKEN = localStorage.staticPagesCmsToken || 'x';
+window.addEventListener('load', e => setTimeout(() => ghAuth.process(), 100));
+</script>
+<script async src="https://unpkg.com/js-yaml@3.12.0/dist/js-yaml.js"></script>
+<script>
 const get = url => fetch(new Request(url, {headers: {"Authorization": `token ${TOKEN}`}}));
-
-// Load config.yml for fields
-// Load post md file to edit, or
-// Create new collection item
 
 function parseContent(text) {
 	const frontMatter = text.match(/^---[\r\n]+([\w\W]+?)---([\r\n]|$)/);
