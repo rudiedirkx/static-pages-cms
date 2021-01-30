@@ -1,3 +1,4 @@
+<meta name="viewport" content="width=device-width, initial-scale=1" />
 <script>
 const GH_APP_ID = '1a620656396aa0d6b5c2';
 const TOKEN = sessionStorage.staticPagesCmsToken || '';
@@ -32,6 +33,7 @@ const ghAuth = {
 		}
 		else {
 			document.body.classList.add('authenticated');
+			return true;
 		}
 	},
 };
@@ -71,9 +73,7 @@ textarea {
 <form id="config">
 	Config:
 	<select>
-		<option>rudiedirkx/dipcorp2/master</option>
-		<option>rudiedirkx2/netlify1-hugo</option>
-		<option>rudiedirkx2/netlify2-jekyll</option>
+		<option>loading...</option>
 	</select>
 	<button>Load</button>
 </form>
@@ -91,11 +91,11 @@ textarea {
 </form>
 
 <script>
-window.addEventListener('load', e => setTimeout(() => ghAuth.process(), 100));
+window.addEventListener('load', e => ghAuth.process() && loadRepos());
 </script>
 <script async src="https://unpkg.com/js-yaml@3.12.0/dist/js-yaml.js"></script>
 <script>
-const get = url => fetch(new Request(url, {headers: {"Authorization": `token ${TOKEN}`}}));
+const get = url => fetch(new Request(url, {headers: {"Authorization": `token ${TOKEN}`}})).then(x => x.json());
 
 function parseContent(text) {
 	const frontMatter = text.match(/^---[\r\n]+([\w\W]+?)---([\r\n]|$)/);
@@ -208,6 +208,19 @@ function ensureCollectionBody(fields) {
 	if (!fields.body) {
 		fields.body = {widget: 'hidden', label: '~body~'};
 	}
+}
+
+function loadRepos() {
+	get('https://api.github.com/user/repos').then(rsp => {
+		const sel = elConfigForm.querySelector('select');
+			sel.innerHTML = '';
+			rsp.forEach(repo => {
+				const el = document.createElement('option');
+				el.value = repo.full_name + '/' + repo.default_branch;
+				el.textContent = repo.full_name;
+				sel.append(el);
+			});
+		});
 }
 
 // ==== //
@@ -430,12 +443,12 @@ elConfigForm.addEventListener('submit', e => {
 	const m = elConfigForm.querySelector('input, select').value.match(/^([^\/]+\/[^\/]+)(?:(\/[^\/]+))?$/);
 	const url = `https://api.github.com/repos/${m[1]}/git/trees/${m[2]||'master'}?recursive=1`;
 	const finder = names => file => names.includes(file.path);
-	get(url).then(rsp => rsp.json()).then(rsp => {
+	get(url).then(rsp => {
 		const cfgFile = null ||
 			rsp.tree.find(finder(['admin/config.yml', 'site/static/admin/config.yml'])) ||
 			rsp.tree.find(finder(['_config.yml']));
 		// Extract config
-		get(cfgFile.url).then(rsp => rsp.json()).then(rsp => {
+		get(cfgFile.url).then(rsp => {
 			loadConfigFromText(atob(rsp.content)).then(x => console.log('config from github', x));
 		});
 		// Load pages
@@ -448,7 +461,7 @@ elConfigForm.addEventListener('submit', e => {
 elPageForm.addEventListener('submit', e => {
 	e.preventDefault();
 	const url = elPageForm.querySelector('select').value;
-	get(url).then(rsp => rsp.json()).then(rsp => {
+	get(url).then(rsp => {
 		const text = decodeURIComponent(escape(atob(rsp.content.trim())));
 		loadContentFromText(text).then(x => console.log('content from github', x));
 	});
