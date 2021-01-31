@@ -1,94 +1,32 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="cms.css" />
+
 <script>
 const DEV = true;
-
 const GH_APP_ID = '1a620656396aa0d6b5c2';
-const TOKEN = sessionStorage.staticPagesCmsToken || '';
-const ghAuth = {
-	redirectURL() {
-		return location.href.replace(/[?#].+/g, '');
-	},
-	start() {
-		sessionStorage.staticPagesCmsAuthState = Math.random();
-		location.href = `https://github.com/login/oauth/authorize?client_id=${GH_APP_ID}&redirect_uri=${encodeURIComponent(this.redirectURL())}&state=${sessionStorage.staticPagesCmsAuthState}&scope=public_repo`;
-	},
-	token(code) {
-		const body = new FormData();
-		body.set('state', sessionStorage.staticPagesCmsAuthState);
-		body.set('code', code);
-		fetch(new Request('https://static-pages-cms-github-token.herokuapp.com/', {
-			method: 'post',
-			body,
-		})).then(rsp => rsp.json()).then(rsp => {
-			sessionStorage.staticPagesCmsToken = rsp.access_token;
-			delete sessionStorage.staticPagesCmsAuthState;
-			location.href = this.redirectURL();
-		});
-	},
-	process() {
-		if (!TOKEN) {
-			const query = new URLSearchParams(location.search);
-			const code = query.get('code');
-			if (code) {
-				document.body.dataset.state = 'authenticating';
-				this.token(code);
-			}
-		}
-		else {
-			document.body.dataset.state = 'authenticated';
-			return true;
-		}
-	},
-};
 </script>
 
-<style>
-body:not([data-state="authenticated"]) #gh-auth ~ *,
-body:not([data-state]) #gh-authing,
-body[data-state="authenticated"] #gh-auth,
-body[data-state="authenticating"] #gh-auth,
-body[data-state="authenticated"] #gh-authing {
-	display: none;
-}
-
-fieldset.structure {
-	border: 0;
-	padding: 0;
-	margin: 0;
-}
-fieldset, button {
-	margin: 1em 0;
-}
-
-.widget[data-widget="hidden"] {
-	display: none;
-}
-
-input[type="text"],
-textarea {
-	width: 700px;
-}
-textarea {
-	height: 70px;
-}
-</style>
-
-<!-- <p>Drag a config file (with collections) on here. And after choosing a collection, a markdown/content file.</p> -->
+<p>Drag a config file (with collections) on here. And after choosing a collection, a markdown/content file. OR:</p>
 
 <p id="gh-authing">Finishing up Github authentication...</p>
 
 <div id="gh-auth">
-	<button onclick="ghAuth.start()">Authenticate with Github</button>
+	<button onclick="github.start()">Authenticate with Github</button>
 </div>
 
 <form id="config">
 	Config:
-	<select>
+	<select name="repo">
 		<option>rudiedirkx2/netlify1-hugo</option>
 		<option>rudiedirkx2/netlify2-jekyll</option>
 		<option>rudiedirkx/dipcorp2:master</option>
 		<option>rudiedirkx2/tugboat-sqlite</option>
 		<option>Loading...</option>
+	</select>
+	<select name="provider">
+		<option>Hugo on Netlify</option>
+		<option>Jekyll on Netlify</option>
+		<option>Github pages</option>
 	</select>
 	<button>Load</button>
 </form>
@@ -105,12 +43,16 @@ textarea {
 	<button>Save</button>
 </form>
 
-<script>
-window.addEventListener('load', e => ghAuth.process() && !DEV && loadRepos());
-</script>
+<script src="gh-auth.js"></script>
+<script src="cms.js"></script>
+<script src="providers.js"></script>
 <script async defer src="https://unpkg.com/js-yaml@3.12.0/dist/js-yaml.js"></script>
 <script>
-const get = url => fetch(new Request(url, {headers: {"Authorization": `token ${TOKEN}`}})).then(x => x.json());
+const github = new GithubAuth(GH_APP_ID);
+
+window.addEventListener('load', e => {
+	github.process() && !DEV && loadRepos();
+});
 
 function parseContent(text) {
 	const frontMatter = text.match(/^---[\r\n]+([\w\W]+?)---([\r\n]|$)/);
@@ -138,95 +80,8 @@ function parseConfigYaml(text) {
 	return jsyaml.load(text, {schema: jsyaml.JSON_SCHEMA});
 }
 
-function extractCollections(config) {
-	if (config.collections && config.collections[0] && config.collections[0].fields && config.collections[0].fields[0]) {
-		return extractCollectionsArray(config.collections);
-	}
-
-	if (config.collections && config.collections.length == null) {
-		const key = Object.keys(config.collections)[0];
-		if (config.collections[key].fields && config.collections[key].fields.length == null) {
-			return extractCollectionsObject(config.collections);
-		}
-	}
-
-	return {};
-}
-
-function extractCollectionsObject(object) {
-	for (let cname in object) {
-		const collection = object[cname];
-		collection.label = collection.label || collection.name || cname;
-		extractFieldsObject(collection.fields);
-		ensureCollectionBody(collection.fields);
-	}
-
-	return object;
-}
-
-function extractFieldsObject(object) {
-	for (let fname in object) {
-		const field = object[fname];
-		field.widget = field.widget || field.type || 'string';
-		delete field.type;
-		field.label = field.label || field.name || fname;
-		delete field.name;
-		field.required = field.required == null ? true : field.required;
-		field.fields && extractFieldsObject(field.fields);
-	}
-
-	return object;
-}
-
-function extractCollectionsArray(array) {
-	const collections = {};
-	for (let collection of array) {
-		if (collection.fields) {
-			collections[collection.name] = {
-				label: collection.label,
-				fields: extractFieldsArray(collection.fields),
-			};
-			ensureCollectionBody(collections[collection.name].fields);
-		}
-		else if (collection.files) {
-			for (let file of collection.files) {
-				const cname = collection.name + ':' + file.name;
-				collections[cname] = {
-					label: file.label || (collection.label + ' - ' + file.name),
-					fields: extractFieldsArray(file.fields),
-				};
-				ensureCollectionBody(collections[cname].fields);
-			}
-		}
-	}
-
-	return collections;
-}
-
-function extractFieldsArray(array) {
-	const fields = {};
-	for (let field of array) {
-		fields[field.name] = field;
-		if (field.fields) {
-			field.fields = extractFieldsArray(field.fields);
-		}
-		else if (field.field && field.field.name) {
-			field.fields = {[field.field.name]: field.field};
-			delete field.field;
-		}
-	}
-
-	return fields;
-}
-
-function ensureCollectionBody(fields) {
-	if (!fields.body) {
-		fields.body = {widget: 'hidden', label: '~body~'};
-	}
-}
-
 function loadRepos() {
-	get('https://api.github.com/user/repos').then(rsp => {
+	github.get('https://api.github.com/user/repos').then(rsp => {
 		const sel = elConfigForm.querySelector('select');
 			sel.innerHTML = '';
 			rsp.forEach(repo => {
@@ -241,127 +96,6 @@ function loadRepos() {
 // ==== //
 
 const randomChar = () => String.fromCodePoint(65 + parseInt(26 * Math.random()));
-
-const getInputValue = (el, props) => el.querySelector('input, select, textarea').value;
-const setInputValue = (el, props, val) => el.querySelector('input, select, textarea').value = val == null ? '' : val;
-const WIDGETS = {
-	hidden: {
-		create(props) {
-			return document.createElement('textarea');
-		},
-		setValue : setInputValue,
-		getValue: getInputValue,
-	},
-	string: {
-		create(props) {
-			return createInput();
-		},
-		setValue : setInputValue,
-		getValue: getInputValue,
-	},
-	date: {
-		create(props) {
-			return createInput('date');
-		},
-		setValue : setInputValue,
-		getValue: getInputValue,
-	},
-	datetime: {
-		create(props) {
-			return createInput('datetime');
-		},
-		setValue : setInputValue,
-		getValue: getInputValue,
-	},
-	number: {
-		create(props) {
-			return createInput('number');
-		},
-		setValue : setInputValue,
-		getValue: getInputValue,
-	},
-	file: {
-		create(props) {
-			return createInput('text');
-		},
-		setValue: setInputValue,
-		getValue: getInputValue,
-	},
-	select: {
-		create(props) {
-			const sel = document.createElement('select');
-			[{value: '', label: '--'}, ...(props.options || [])].forEach(opt => {
-				const el = document.createElement('option');
-				el.value = opt.value || opt.label;
-				el.textContent = opt.label || opt.value;
-				sel.append(el);
-			});
-			return sel;
-		},
-		setValue: setInputValue,
-		getValue: getInputValue,
-	},
-	text: {
-		create(props) {
-			const el = document.createElement('textarea');
-			el.value = randomChar();
-			return el;
-		},
-		setValue: setInputValue,
-		getValue: getInputValue,
-	},
-	list: {
-		create(props) {
-			return createFieldset(props.fields, 'Item 1');
-		},
-		setValue(el, props, value) {
-			if (!value || !value.length) return;
-
-			el.querySelectorAll(':scope > fieldset').forEach(fs => fs.remove());
-
-			const L = value.length || 1;
-			for ( let n = 0; n < L; n++ ) {
-				const fs = createFieldset(props.fields, `Item ${n+1}`);
-				el.append(fs);
-				setFieldsetValues(fs, value[n]);
-			}
-		},
-		getValue(el, props) {
-			const items = Array.from(el.querySelectorAll(':scope > fieldset'));
-			return items.map(fs => getFieldsetValues(fs));
-		},
-	},
-	object: {
-		create(props) {
-			return createFieldset(props.fields);
-		},
-		setValue(el, props, value) {
-			setFieldsetValues(el.querySelector('fieldset'), value || {});
-		},
-		getValue(el, props) {
-			return getFieldsetValues(el.querySelector('fieldset'));
-		},
-	},
-};
-WIDGETS.markdown = WIDGETS.text;
-WIDGETS.image = WIDGETS.file;
-
-function createButtons() {
-	elCreateButtons.innerHTML = '';
-	for (let cname in g_collections) {
-		const btn = document.createElement('button');
-		btn.textContent = g_collections[cname].label;
-		btn.dataset.collection = cname;
-		elCreateButtons.append(btn);
-		elCreateButtons.append(' ');
-	}
-}
-
-function createForm(cname) {
-	elContentForm.innerHTML = '';
-	elContentForm.append(createFieldset(g_collections[cname].fields, g_collections[cname].label));
-	g_collection = cname;
-}
 
 function createFieldset(fields, title) {
 	const fs = document.createElement('fieldset');
@@ -398,15 +132,6 @@ function createWidget(field) {
 	}
 
 	return document.createTextNode(' ' + field.widget);
-}
-
-function createInput(type) {
-	const el = document.createElement('input');
-	el.type = type || 'text';
-	if (el.type != 'file') {
-		el.value = randomChar();
-	}
-	return el;
 }
 
 function setFieldsetValues(fs, values) {
@@ -453,36 +178,48 @@ const elContentForm = document.querySelector('form#content > div');
 const elConfigForm = document.querySelector('form#config');
 const elPageForm = document.querySelector('form#page');
 
-elConfigForm.addEventListener('submit', e => {
+var cmsUi = new CmsUI();
+var cms;
+
+elConfigForm.addEventListener('submit', function(e) {
 	e.preventDefault();
-	const repo = elConfigForm.querySelector('input, select').value;
+	const repo = this.elements.repo.value;
+	const provider = new PROVIDERS[this.elements.provider.value];
+
+	cms = new CmsContext(cmsUi, provider);
+
 	const pieces = repo.split(':');
 	const url = `https://api.github.com/repos/${pieces[0]}/git/trees/${pieces[1]||'master'}?recursive=1`;
 	const finder = names => file => names.includes(file.path);
-	get(url).then(rsp => {
-		if (!rsp.tree) throw new Error(`Can't find files in repo '${repo}'`);
-		const cfgFile = null ||
-			rsp.tree.find(finder(['admin/config.yml', 'site/static/admin/config.yml'])) ||
-			rsp.tree.find(finder(['_config.yml']));
-		if (!cfgFile) throw new Error(`Can't find config file in repo '${repo}'`);
+	github.get(url).then(rsp => {
+		if (!rsp.tree) throw new Error(`Can't find files in repo '${repo}':\n` + JSON.stringify(rsp, null, '  '));
 
-		// Extract config
-		get(cfgFile.url).then(rsp => {
-			loadConfigFromText(atob(rsp.content)).then(x => console.log('config from github', x));
+		const file = provider.findConfigFile(rsp.tree);
+		if (!file) throw new Error(`Can't find config file in repo '${repo}'\n` + JSON.stringify(rsp.tree, null, '  '));
+
+		// Load collections
+		github.get(file.url).then(rsp => {
+			const text = github.b64decode(rsp.content);
+			const config = parseConfigYaml(text);
+			cms.loadCollections(config).then(x => console.log('config from github', x));
 		});
 
 		// Load pages
-		const pages = rsp.tree.filter(file => file.path.match(/\.(md|html)$/i) && !file.path.match(/(^|\/)_?layouts\//));
-		const select = elPageForm.querySelector('select');
-		select.innerHTML = pages.map(file => `<option value="${file.url}">${file.path}</option>`).join('');
+		cms.loadPages(rsp.tree).then(x => console.log('pages from github', x));
 	});
 });
 
 elPageForm.addEventListener('submit', e => {
 	e.preventDefault();
-	const url = elPageForm.querySelector('select').value;
-	get(url).then(rsp => {
-		const text = decodeURIComponent(escape(atob(rsp.content.trim())));
+	const select = elPageForm.querySelector('select');
+	const url = select.value;
+	const path = select.options[select.selectedIndex].label;
+
+	const collection = cms.findCollectionFromPath(path);
+	collection && cms.loadContentForm(collection);
+
+	github.get(url).then(rsp => {
+		const text = github.b64decode(rsp.content);
 		loadContentFromText(text).then(x => console.log('content from github', x));
 	});
 });
@@ -491,7 +228,7 @@ elCreateButtons.addEventListener('click', e => {
 	const btn = e.target.closest('button');
 	if (btn && btn.dataset.collection) {
 		e.preventDefault();
-		createForm(btn.dataset.collection);
+		cms.loadContentForm(btn.dataset.collection);
 	}
 });
 
@@ -500,6 +237,7 @@ elContentForm.closest('form').addEventListener('submit', e => {
 	const fs = elContentForm.querySelector('fieldset');
 	const values = getFieldsetValues(fs);
 	console.log(values);
+	// @todo Keep original values that are not in the form, like `layout`
 	const {body, ...fm} = values;
 	const md = `---\n${jsyaml.dump(fm).trim()}\n---\n\n${body}\n`
 	console.log(md);
