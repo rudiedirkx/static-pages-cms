@@ -4,6 +4,7 @@
 <script>
 const DEV = true;
 const GH_APP_ID = '1a620656396aa0d6b5c2';
+const GH_APP_ENV = location.hostname.includes('staticpagescms.') ? 'dev' : 'prod';
 </script>
 
 <p>Drag & drop a markdown/content file on here, OR:</p>
@@ -50,7 +51,7 @@ const GH_APP_ID = '1a620656396aa0d6b5c2';
 <script src="providers.js"></script>
 <script async defer src="https://unpkg.com/js-yaml@3.12.0/dist/js-yaml.js"></script>
 <script>
-const github = new GithubAuth(GH_APP_ID);
+const github = new GithubAuth(GH_APP_ID, GH_APP_ENV);
 
 window.addEventListener('load', e => {
 	github.process() && !DEV && loadRepos();

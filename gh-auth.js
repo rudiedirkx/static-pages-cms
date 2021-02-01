@@ -2,8 +2,9 @@
 
 class GithubAuth {
 
-	constructor(appId, token) {
+	constructor(appId, env, token) {
 		this.appId = appId;
+		this.env = env;
 		this.token = token || sessionStorage.staticPagesCmsToken || '';
 	}
 
@@ -17,13 +18,7 @@ class GithubAuth {
 	}
 
 	fetchToken(code) {
-		const body = new FormData();
-		body.set('state', sessionStorage.staticPagesCmsAuthState);
-		body.set('code', code);
-		fetch(new Request('https://static-pages-cms-github-token.herokuapp.com/', {
-			method: 'post',
-			body,
-		})).then(rsp => rsp.json()).then(rsp => {
+		fetch(`https://ci7luqxjw2.execute-api.eu-central-1.amazonaws.com/default/static-pages-cms-github-token?env=${this.env}&code=${code}`).then(rsp => rsp.json()).then(rsp => {
 			this.token = sessionStorage.staticPagesCmsToken = rsp.access_token;
 			delete sessionStorage.staticPagesCmsAuthState;
 			location.href = this.redirectURL();
