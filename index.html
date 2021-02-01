@@ -2,9 +2,10 @@
 <link rel="stylesheet" href="cms.css" />
 
 <script>
-const DEV = true;
-const GH_APP_ID = '1a620656396aa0d6b5c2';
-const GH_APP_ENV = location.hostname.includes('staticpagescms.') ? 'dev' : 'prod';
+const DEV = false;
+const GH_APP_DEV = location.hostname.includes('staticpagescms.');
+const GH_APP_ENV = GH_APP_DEV ? 'dev' : 'prod';
+const GH_APP_ID = GH_APP_DEV ? '1a620656396aa0d6b5c2' : '2f0e7f2d5e38b39fd9eb';
 </script>
 
 <p>Drag & drop a markdown/content file on here, OR:</p>
