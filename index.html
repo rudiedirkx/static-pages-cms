@@ -6,7 +6,7 @@ const DEV = true;
 const GH_APP_ID = '1a620656396aa0d6b5c2';
 </script>
 
-<p>Drag a config file (with collections) on here. And after choosing a collection, a markdown/content file. OR:</p>
+<p>Drag & drop a markdown/content file on here, OR:</p>
 
 <p id="gh-authing">Finishing up Github authentication...</p>
 
@@ -16,13 +16,14 @@ const GH_APP_ID = '1a620656396aa0d6b5c2';
 
 <form id="config">
 	Config:
-	<select name="repo">
+	<input type="search" name="repo" placeholder="user/repo:branch ..." list="dl-repos" />
+	<datalist id="dl-repos">
 		<option>rudiedirkx2/netlify1-hugo</option>
 		<option>rudiedirkx2/netlify2-jekyll</option>
 		<option>rudiedirkx/dipcorp2:master</option>
 		<option>rudiedirkx2/tugboat-sqlite</option>
 		<option>Loading...</option>
-	</select>
+	</datalist>
 	<select name="provider">
 		<option>Hugo on Netlify</option>
 		<option>Jekyll on Netlify</option>
@@ -31,14 +32,15 @@ const GH_APP_ID = '1a620656396aa0d6b5c2';
 	<button>Load</button>
 </form>
 
-<form id="page">
-	<select></select>
+<form hidden id="page">
+	<input type="search" name="page" placeholder="Page path ..." list="dl-pages" />
+	<datalist id="dl-pages"></datalist>
 	<button>Load</button>
 	|
-	Open: <span id="create-buttons"></span>
+	New: <span id="create-buttons"></span>
 </form>
 
-<form id="content">
+<form hidden id="content">
 	<div></div>
 	<button>Save</button>
 </form>
@@ -66,31 +68,21 @@ function parseFrontMatterYaml(text) {
 	return jsyaml.load(text, {schema: jsyaml.JSON_SCHEMA});
 }
 
-async function loadConfigFromFile(file) {
-	const text = await file.text();
-	return loadConfigFromText(text);
-}
-
-async function loadContentFromFile(file) {
-	const text = await file.text();
-	return loadContentFromText(text);
-}
-
 function parseConfigYaml(text) {
 	return jsyaml.load(text, {schema: jsyaml.JSON_SCHEMA});
 }
 
 function loadRepos() {
-	github.get('https://api.github.com/user/repos').then(rsp => {
-		const sel = elConfigForm.querySelector('select');
-			sel.innerHTML = '';
-			rsp.forEach(repo => {
-				const el = document.createElement('option');
-				el.value = repo.full_name + ':' + repo.default_branch;
-				el.textContent = repo.full_name;
-				sel.append(el);
-			});
+	github.get('https://api.github.com/user/repos?per_page=100&sort=pushed').then(rsp => {
+		const sel = $elConfigForm.querySelector('select, datalist');
+		sel.innerHTML = '';
+		rsp.forEach(repo => {
+			const el = document.createElement('option');
+			el.value = repo.full_name + ':' + repo.default_branch;
+			sel.matches('select') && (el.textContent = repo.full_name);
+			sel.append(el);
 		});
+	});
 }
 
 // ==== //
@@ -152,36 +144,15 @@ function getFieldsetValues(fs) {
 
 // ==== //
 
-var g_collections = {};
-var g_collection = '';
-
-async function loadConfigFromText(text) {
-	const config = parseConfigYaml(text);
-	g_collections = extractCollections(config);
-	g_collection = '';
-	elContentForm.innerHTML = '';
-	createButtons();
-	return g_collections;
-}
-
-async function loadContentFromText(text) {
-	const values = parseContent(text);
-	const fs = elContentForm.querySelector('fieldset');
-	fs && setFieldsetValues(fs, values || {});
-	return values;
-}
-
-// ==== //
-
-const elCreateButtons = document.querySelector('#create-buttons');
-const elContentForm = document.querySelector('form#content > div');
-const elConfigForm = document.querySelector('form#config');
-const elPageForm = document.querySelector('form#page');
+const $elCreateButtons = document.querySelector('#create-buttons');
+const $elContentForm = document.querySelector('form#content > div');
+const $elConfigForm = document.querySelector('form#config');
+const $elPageForm = document.querySelector('form#page');
 
 var cmsUi = new CmsUI();
 var cms;
 
-elConfigForm.addEventListener('submit', function(e) {
+$elConfigForm.addEventListener('submit', function(e) {
 	e.preventDefault();
 	const repo = this.elements.repo.value;
 	const provider = new PROVIDERS[this.elements.provider.value];
@@ -198,33 +169,41 @@ elConfigForm.addEventListener('submit', function(e) {
 		if (!file) throw new Error(`Can't find config file in repo '${repo}'\n` + JSON.stringify(rsp.tree, null, '  '));
 
 		// Load collections
-		github.get(file.url).then(rsp => {
-			const text = github.b64decode(rsp.content);
+		github.get(file.url).then(cfgRsp => {
+			const text = github.b64decode(cfgRsp.content);
 			const config = parseConfigYaml(text);
+			cms.loadConfig(config);
 			cms.loadCollections(config).then(x => console.log('config from github', x));
+
+			cms.loadPages(rsp.tree).then(x => console.log('pages from github', x));
+			cms.loadMedia(rsp.tree).then(x => console.log('media from github', x));
+
+			$elPageForm.hidden = false;
 		});
-
-		// Load pages
-		cms.loadPages(rsp.tree).then(x => console.log('pages from github', x));
 	});
 });
 
-elPageForm.addEventListener('submit', e => {
+$elPageForm.addEventListener('submit', e => {
 	e.preventDefault();
-	const select = elPageForm.querySelector('select');
-	const url = select.value;
-	const path = select.options[select.selectedIndex].label;
+	const page = $elPageForm.elements.page.value;
+	const file = cms.pages.find(file => file.path == page);
 
-	const collection = cms.findCollectionFromPath(path);
-	collection && cms.loadContentForm(collection);
+	cms.setCurrentCollection(null);
+	var collection = cms.findCollectionFromPath(file.path);
 
-	github.get(url).then(rsp => {
+	github.get(file.url).then(rsp => {
 		const text = github.b64decode(rsp.content);
-		loadContentFromText(text).then(x => console.log('content from github', x));
+		const values = parseContent(text);
+		console.log('content from github', values);
+
+		if (!collection) {
+			collection = CmsCollection.fromContent(values, 'Unknown content file');
+		}
+		cms.loadContentForm(collection, values);
 	});
 });
 
-elCreateButtons.addEventListener('click', e => {
+$elCreateButtons.addEventListener('click', e => {
 	const btn = e.target.closest('button');
 	if (btn && btn.dataset.collection) {
 		e.preventDefault();
@@ -232,9 +211,9 @@ elCreateButtons.addEventListener('click', e => {
 	}
 });
 
-elContentForm.closest('form').addEventListener('submit', e => {
+$elContentForm.closest('form').addEventListener('submit', e => {
 	e.preventDefault();
-	const fs = elContentForm.querySelector('fieldset');
+	const fs = $elContentForm.querySelector('fieldset');
 	const values = getFieldsetValues(fs);
 	console.log(values);
 	// @todo Keep original values that are not in the form, like `layout`
@@ -249,13 +228,12 @@ document.addEventListener('dragover', e => {
 document.addEventListener('drop', async e => {
 	e.preventDefault();
 	const file = e.dataTransfer.files[0];
+	const text = await file.text();
+	const values = await parseContent(text);
 
-	if (file.name.match(/\.ya?ml$/i)) {
-		return loadConfigFromFile(file).then(x => console.log('config from file drop', x));
-	}
+	const collection = CmsCollection.fromContent(values, 'Drag & drop content');
 
-	if (file.name.match(/\.(md|html)$/i) && g_collection) {
-		return loadContentFromFile(file).then(x => console.log('content from file drop', x));
-	}
+	cms || (cms = new CmsContext(cmsUi));
+	cms.loadContentForm(collection, values);
 });
 </script>

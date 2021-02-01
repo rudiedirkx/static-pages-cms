@@ -2,15 +2,18 @@
 
 class CmsUI {
 	constructor() {
-		this.$collectionButtons = elCreateButtons;
-		this.$selectPageForm = elPageForm;
-		this.$contentForm = elContentForm;
+		this.$collectionButtons = $elCreateButtons;
+		this.$selectPageForm = $elPageForm;
+		this.$contentForm = $elContentForm;
 	}
 
 	loadCollections(collections) {
+		this.$contentForm.closest('form').hidden = true;
+		this.$collectionButtons.innerHTML = '';
 		for (let cname in collections) {
+			const collection = collections[cname];
 			const btn = document.createElement('button');
-			btn.textContent = collections[cname].label;
+			btn.textContent = collection.file ? `(${collection.label})` : collection.label;
 			btn.dataset.collection = cname;
 			this.$collectionButtons.append(btn);
 			this.$collectionButtons.append(' ');
@@ -18,18 +21,41 @@ class CmsUI {
 	}
 
 	loadPages(pages) {
-		const select = this.$selectPageForm.querySelector('select');
-		select.innerHTML = pages.map(file => `<option value="${file.url}">${file.path}</option>`).join('');
+		const el = this.$selectPageForm.querySelector('datalist');
+		this.fillDatalistOptions(el, pages.map(file => file.path));
+		// select.innerHTML = pages.map((file, i) => `<option value="${i}">${file.path}</option>`).join('');
 	}
 
-	loadContentForm(collection) {
+	loadContentForm(collection, values) {
 		this.$contentForm.innerHTML = '';
+		this.$contentForm.closest('form').hidden = false;
 		this.$contentForm.append(createFieldset(collection.fields, collection.label));
+
+		if (values) {
+			const fs = this.$contentForm.querySelector('fieldset');
+			setFieldsetValues(fs, values);
+		}
 	}
 
 	markOpenCollection(collection) {
 		document.querySelectorAll('button[data-collection]').forEach(el => el.classList.remove('active'));
-		document.querySelector(`button[data-collection="${collection}"]`).classList.add('active');
+		const btn = document.querySelector(`button[data-collection="${collection}"]`);
+		if (btn) {
+			btn.classList.add('active');
+		}
+	}
+
+	fillSelectOptions(el, options) {
+
+	}
+
+	fillDatalistOptions(el, options) {
+		el.innerHTML = '';
+		options.forEach(value => {
+			const opt = document.createElement('option');
+			opt.value = value;
+			el.append(opt);
+		});
 	}
 }
 
@@ -38,8 +64,12 @@ class CmsContext {
 		this.ui = ui;
 		this.provider = provider;
 
+		this.mediaFolder = null;
+		this.mediaPath = null;
+
 		this.collections = {};
-		this.pages = {};
+		this.pages = [];
+		this.media = [];
 
 		this.collection = null;
 	}
@@ -56,6 +86,12 @@ class CmsContext {
 		}
 	}
 
+	async loadConfig(config) {
+		this.mediaFolder = this.provider.findMediaFolder(config);
+		this.mediaPath = this.provider.findMediaPath(config);
+		return this;
+	}
+
 	async loadCollections(config) {
 		this.collections = await this.provider.findCollections(config);
 		this.ui.loadCollections(this.collections);
@@ -63,17 +99,29 @@ class CmsContext {
 	}
 
 	async loadPages(tree) {
-		this.pages = await this.provider.findPages(tree); /*.reduce((list, file), => {
-			list[file.url] = file.path;
-		});*/
+		this.pages = await this.provider.findPages(tree, this);
 		this.ui.loadPages(this.pages);
 		return this.pages;
 	}
 
-	loadContentForm(collection) {
-		this.collection = collection;
-		this.ui.loadContentForm(this.collections[collection]);
-		this.ui.markOpenCollection(collection);
+	async loadMedia(tree) {
+		this.media = await this.provider.findMedia(tree, this);
+		return this.media;
+	}
+
+	loadContentForm(collection, values) {
+		if (collection instanceof CmsCollection) {
+			this.setCurrentCollection(null);
+			this.ui.loadContentForm(collection, values);
+		}
+		else {
+			this.setCurrentCollection(collection);
+			this.ui.loadContentForm(this.collections[collection], values);
+		}
+	}
+
+	setCurrentCollection(collection) {
+		this.ui.markOpenCollection(this.collection = collection);
 	}
 }
 
@@ -105,6 +153,11 @@ class CmsCollection {
 			this.fields.body = new CmsField('hidden', '~body~');
 		}
 	}
+
+	static fromContent(values, label) {
+		const fields = CmsField.fromValues(values);
+		return new CmsCollection(label || 'Unknown', fields);
+	}
 }
 
 class CmsField {
@@ -126,6 +179,41 @@ class CmsField {
 
 	setOption(name, value) {
 		this[name] = value;
+	}
+
+	static fromValues(values) {
+		const fields = {};
+		for (let fname in values) {
+			fields[fname] = CmsField.fromValue(values[fname], fname);
+		}
+		return fields;
+	}
+
+	static fromValue(value, label) {
+		if (typeof value == 'number') {
+			return new CmsField('number', label);
+		}
+		else if (typeof value == 'string') {
+			// if (/^\d\d\d\d-\d\d-\d\d$/.test(value)) {
+			// 	return new CmsField('date', label);
+			// }
+			return new CmsField('text', label);
+		}
+		else if (typeof value == 'boolean') {
+			return new CmsField('boolean', label);
+		}
+		else if (value instanceof Array) {
+			return new CmsField('list', label, {
+				fields: value.length ? CmsField.fromValues(value[0]) : {},
+			});
+		}
+		else if (typeof value == 'object') {
+			return new CmsField('object', label, {
+				fields: CmsField.fromValues(value),
+			});
+		}
+
+		return new CmsField('unknown', label);
 	}
 }
 
@@ -185,6 +273,20 @@ class CmsWidgetDatetime extends CmsWidgetInput {
 class CmsWidgetNumber extends CmsWidgetInput {
 	create(props) {
 		return this.createInput('number');
+	}
+}
+
+class CmsWidgetBoolean extends CmsWidgetInput {
+	create(props) {
+		return this.createInput('checkbox');
+	}
+
+	getValue(el, props) {
+		return el.querySelector('input').checked;
+	}
+
+	setValue(el, props, val) {
+		return el.querySelector('input').checked = val === true;
 	}
 }
 
@@ -287,6 +389,7 @@ const WIDGETS = {
 	"date": new CmsWidgetDate(),
 	"datetime": new CmsWidgetDatetime(),
 	"number": new CmsWidgetNumber(),
+	"boolean": new CmsWidgetBoolean(),
 	"file": new CmsWidgetFile(),
 	"image": new CmsWidgetImage(),
 	"select": new CmsWidgetSelect(),

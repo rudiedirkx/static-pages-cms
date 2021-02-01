@@ -102,8 +102,18 @@ class CmsProvider {
 		return null;
 	}
 
-	async findPages(tree) {
+	findMediaFolder(config) {
+	}
+
+	findMediaPath(config) {
+	}
+
+	async findPages(tree, cms) {
 		return tree;
+	}
+
+	async findMedia(tree, cms) {
+		return this.filterTreeFolders(tree, [cms.mediaFolder]);
 	}
 
 	async findCollections(config) {
@@ -134,7 +144,15 @@ class CmsProviderGithubPages extends CmsProvider {
 		return tree.find(file => file.path == '_config.yml');
 	}
 
-	async findPages(tree) {
+	findMediaFolder(config) {
+		return config.media_folder || 'media';
+	}
+
+	findMediaPath(config) {
+		return config.public_folder || 'media';
+	}
+
+	async findPages(tree, cms) {
 		return this.filterTreeExts(this.filterTreeNotFolders(tree, ['_data', '_includes', '_layouts']), ['md', 'html']);
 	}
 
@@ -153,7 +171,15 @@ class CmsProviderHugoOnNetlify extends CmsProvider {
 		return tree.find(file => file.path == 'site/static/admin/config.yml');
 	}
 
-	async findPages(tree) {
+	findMediaFolder(config) {
+		return config.media_folder;
+	}
+
+	findMediaPath(config) {
+		return config.public_folder;
+	}
+
+	async findPages(tree, cms) {
 		return this.filterTreeExts(this.filterTreeFolders(tree, ['site/content']), ['md', 'html']);
 	}
 
@@ -172,7 +198,15 @@ class CmsProviderJekyllOnNetlify extends CmsProvider {
 		return tree.find(file => file.path == 'admin/config.yml');
 	}
 
-	async findPages(tree) {
+	findMediaFolder(config) {
+		return config.media_folder;
+	}
+
+	findMediaPath(config) {
+		return config.public_folder;
+	}
+
+	async findPages(tree, cms) {
 		return this.filterTreeExts(this.filterTreeNotFolders(tree, ['_data', '_includes', '_layouts']), ['md', 'html']);
 	}
 
