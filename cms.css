@@ -1,4 +1,4 @@
-body:not([data-state="authenticated"]) #gh-auth ~ *,
+body:not([data-state="authenticated"]) #config,
 body:not([data-state]) #gh-authing,
 body[data-state="authenticated"] #gh-auth,
 body[data-state="authenticating"] #gh-auth,
