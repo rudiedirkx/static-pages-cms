@@ -165,20 +165,23 @@ class CmsField {
 		this.widget = widget;
 		this.label = label;
 
-		options && this.setOptions(options);
+		options && this.addOptions(this.prepareOptions(options));
 		if (this.required == null) this.required = true;
 	}
 
-	setOptions(options) {
-		for (let opt in options) {
-			if (this[opt] === undefined) {
-				this.setOption(opt, options[opt]);
-			}
+	prepareOptions(options) {
+		if (WIDGETS[this.widget]) {
+			WIDGETS[this.widget].prepareOptions(options);
 		}
+		return options;
 	}
 
-	setOption(name, value) {
-		this[name] = value;
+	addOptions(options) {
+		for (let opt in options) {
+			if (this[opt] === undefined) {
+				this[opt] = options[opt];
+			}
+		}
 	}
 
 	static fromValues(values) {
@@ -218,6 +221,9 @@ class CmsField {
 }
 
 class CmsWidget {
+	prepareOptions(options) {
+	}
+
 	create(props) {
 	}
 
@@ -229,18 +235,23 @@ class CmsWidget {
 
 	setValue(el, props, val) {
 	}
-}
 
-class CmsWidgetInput extends CmsWidget {
 	createInput(type) {
 		const el = document.createElement('input');
 		el.type = type || 'text';
 		DEV && el.type != 'file' && (el.value = randomChar());
 		return el;
 	}
+}
+
+class CmsWidgetInput extends CmsWidget {
+	constructor(type) {
+		super();
+		this.type = type;
+	}
 
 	create(props) {
-		return this.createInput();
+		return this.createInput(this.type);
 	}
 
 	getValue(el, props) {
@@ -249,30 +260,6 @@ class CmsWidgetInput extends CmsWidget {
 
 	setValue(el, props, val) {
 		return el.querySelector('input').value = val == null ? '' : val;
-	}
-}
-
-class CmsWidgetString extends CmsWidgetInput {
-	create(props) {
-		return this.createInput('text');
-	}
-}
-
-class CmsWidgetDate extends CmsWidgetInput {
-	create(props) {
-		return this.createInput('date');
-	}
-}
-
-class CmsWidgetDatetime extends CmsWidgetInput {
-	create(props) {
-		return this.createInput('datetime');
-	}
-}
-
-class CmsWidgetNumber extends CmsWidgetInput {
-	create(props) {
-		return this.createInput('number');
 	}
 }
 
@@ -290,16 +277,39 @@ class CmsWidgetBoolean extends CmsWidgetInput {
 	}
 }
 
-class CmsWidgetFile extends CmsWidgetInput {
+class CmsWidgetFile extends CmsWidget {
 	create(props) {
-		return this.createInput('text');
+		const div = document.createElement('div');
+		div.append(document.createElement('output'));
+		div.append(' ');
+		div.append(this.createInput('file'));
+		return div;
+	}
+
+	getValue(el, props) {
+		const file = el.querySelector('input').files[0];
+		return file ? file.name : el.querySelector('output').value;
+	}
+
+	setValue(el, props, val) {
+		return el.querySelector('output').value = val || '';
 	}
 }
 
-class CmsWidgetImage extends CmsWidgetFile {
-}
-
 class CmsWidgetSelect extends CmsWidget {
+	prepareOptions(props) {
+		if (props.options instanceof Array) {
+			props.options = props.options.map(opt => {
+				return typeof opt == 'string' ? {value: opt} : opt;
+			});
+		}
+		else if (typeof props.options == 'object') {
+			props.options = Object.entries(props.options).map(([value, label]) => {
+				return {value, label};
+			});
+		}
+	}
+
 	create(props) {
 		const sel = document.createElement('select');
 		[{value: '', label: '--'}, ...(props.options || [])].forEach(opt => {
@@ -385,16 +395,16 @@ class CmsWidgetObject extends CmsWidget {
 
 const WIDGETS = {
 	"hidden": new CmsWidgetHidden(),
-	"string": new CmsWidgetString(),
-	"date": new CmsWidgetDate(),
-	"datetime": new CmsWidgetDatetime(),
-	"number": new CmsWidgetNumber(),
-	"boolean": new CmsWidgetBoolean(),
+	"string": new CmsWidgetInput('text'),
+	"date": new CmsWidgetInput('date'),
+	"datetime": new CmsWidgetInput('datetime'),
+	"number": new CmsWidgetInput('number'),
+	"boolean": new CmsWidgetBoolean('checkbox'),
 	"file": new CmsWidgetFile(),
-	"image": new CmsWidgetImage(),
+	"image": new CmsWidgetFile(),
 	"select": new CmsWidgetSelect(),
 	"text": new CmsWidgetText(),
-	"markdown": new CmsWidgetMarkdown(),
+	"markdown": new CmsWidgetText(),
 	"list": new CmsWidgetList(),
 	"object": new CmsWidgetObject(),
 };

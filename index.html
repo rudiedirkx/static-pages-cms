@@ -55,7 +55,7 @@ const GH_APP_ID = GH_APP_DEV ? '1a620656396aa0d6b5c2' : '2f0e7f2d5e38b39fd9eb';
 const github = new GithubAuth(GH_APP_ID, GH_APP_ENV);
 
 window.addEventListener('load', e => {
-	github.process() && !DEV && loadRepos();
+	github.process() && loadRepos();
 });
 
 function parseContent(text) {
@@ -75,9 +75,17 @@ function parseConfigYaml(text) {
 }
 
 function loadRepos() {
-	github.get('https://api.github.com/user/repos?per_page=100&sort=pushed').then(rsp => {
-		const sel = $elConfigForm.querySelector('select, datalist');
-		sel.innerHTML = '';
+	const params = new URLSearchParams(location.hash.substr(1));
+	if (params.get('repo')) {
+		$elConfigForm.elements.repo.value = params.get('repo');
+		return;
+	}
+
+	if (DEV) return;
+
+	const sel = $elConfigForm.querySelector('select, datalist');
+	sel.innerHTML = '';
+	github.get('https://api.github.com/user/repos?per_page=20&sort=pushed').then(rsp => {
 		rsp.forEach(repo => {
 			const el = document.createElement('option');
 			el.value = repo.full_name + ':' + repo.default_branch;
