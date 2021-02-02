@@ -26,13 +26,17 @@ const CmsCollectionHelpersCustom = {
 	extractFieldsCustom(object) {
 		const fields = {};
 		for (let fname in object) {
-			const field = object[fname];
+			const field = typeof object[fname] == 'string' ? {widget: object[fname]} : object[fname];
 			field.widget = field.widget || field.type || 'string';
 			delete field.type;
 			field.label = field.label || field.name || fname;
 			delete field.name;
 			if (field.fields) {
 				field.fields = this.extractFieldsCustom(field.fields);
+			}
+			else if (field.field) {
+				field.fields = this.extractFieldsCustom({_value: field.field});
+				delete field.field;
 			}
 			fields[fname] = new CmsField(field.widget, field.label, field);
 		}
@@ -86,6 +90,7 @@ const CmsCollectionHelpersNetlify = {
 				field.fields = this.extractFieldsNetlify(field.fields);
 			}
 			else if (field.field) {
+				field.field.name = '_value';
 				field.fields = this.extractFieldsNetlify([field.field]);
 				delete field.field;
 			}

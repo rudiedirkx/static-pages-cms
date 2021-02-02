@@ -2,7 +2,7 @@
 <link rel="stylesheet" href="cms.css" />
 
 <script>
-const DEV = false;
+const DEV = true;
 const GH_APP_DEV = location.hostname.includes('staticpagescms.');
 const GH_APP_ENV = GH_APP_DEV ? 'dev' : 'prod';
 const GH_APP_ID = GH_APP_DEV ? '1a620656396aa0d6b5c2' : '2f0e7f2d5e38b39fd9eb';
@@ -35,8 +35,9 @@ const GH_APP_ID = GH_APP_DEV ? '1a620656396aa0d6b5c2' : '2f0e7f2d5e38b39fd9eb';
 </form>
 
 <form hidden id="page">
-	<input type="search" name="page" placeholder="Page path ..." list="dl-pages" />
-	<datalist id="dl-pages"></datalist>
+	<!-- <input type="search" name="page" placeholder="Page path ..." list="dl-pages" />
+	<datalist id="dl-pages"></datalist> -->
+	<select name="page"></select>
 	<button>Load</button>
 	|
 	New: <span id="create-buttons"></span>
@@ -78,6 +79,10 @@ function loadRepos() {
 	const params = new URLSearchParams(location.hash.substr(1));
 	if (params.get('repo')) {
 		$elConfigForm.elements.repo.value = params.get('repo');
+		if (params.get('provider')) {
+			$elConfigForm.elements.provider.value = params.get('provider');
+			$elConfigForm.dispatchEvent(new CustomEvent('submit'));
+		}
 		return;
 	}
 
@@ -98,43 +103,6 @@ function loadRepos() {
 // ==== //
 
 const randomChar = () => String.fromCodePoint(65 + parseInt(26 * Math.random()));
-
-function createFieldset(fields, title) {
-	const fs = document.createElement('fieldset');
-
-	if (title) {
-		const leg = document.createElement('legend');
-		leg.textContent = title;
-		fs.append(leg);
-	}
-	else {
-		fs.classList.add('structure');
-	}
-
-	for (let fname in fields) {
-		const field = fields[fname];
-		const row = document.createElement('fieldset');
-		row._field = field;
-		row.classList.add('widget');
-		row.dataset.widget = field.widget;
-		row.dataset.name = fname;
-		fs.append(row);
-		const leg = document.createElement('legend');
-		leg.textContent = field.label;
-		row.append(leg);
-		row.append(createWidget(field));
-	}
-	return fs;
-}
-
-function createWidget(field) {
-	const handler = WIDGETS[field.widget];
-	if (handler) {
-		return handler.create(field);
-	}
-
-	return document.createTextNode(' ' + field.widget);
-}
 
 function setFieldsetValues(fs, values) {
 	for (let el of fs.querySelectorAll(':scope > fieldset[data-widget][data-name]')) {
@@ -181,12 +149,13 @@ $elConfigForm.addEventListener('submit', function(e) {
 		// Load collections
 		github.get(file.url).then(cfgRsp => {
 			const text = github.b64decode(cfgRsp.content);
+console.log(text);
 			const config = parseConfigYaml(text);
 			cms.loadConfig(config);
-			cms.loadCollections(config).then(x => console.log('config from github', x));
+			cms.loadCollections(config); // .then(x => console.log('config from github', x));
 
-			cms.loadPages(rsp.tree).then(x => console.log('pages from github', x));
-			cms.loadMedia(rsp.tree).then(x => console.log('media from github', x));
+			cms.loadPages(rsp.tree); // .then(x => console.log('pages from github', x));
+			cms.loadMedia(rsp.tree); // .then(x => console.log('media from github', x));
 
 			$elPageForm.hidden = false;
 		});
@@ -204,7 +173,7 @@ $elPageForm.addEventListener('submit', e => {
 	github.get(file.url).then(rsp => {
 		const text = github.b64decode(rsp.content);
 		const values = parseContent(text);
-		console.log('content from github', values);
+		// console.log('content from github', values);
 
 		if (!collection) {
 			collection = CmsCollection.fromContent(values, 'Unknown content file');

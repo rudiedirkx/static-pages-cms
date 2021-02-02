@@ -21,15 +21,21 @@ class CmsUI {
 	}
 
 	loadPages(pages) {
-		const el = this.$selectPageForm.querySelector('datalist');
-		this.fillDatalistOptions(el, pages.map(file => file.path));
-		// select.innerHTML = pages.map((file, i) => `<option value="${i}">${file.path}</option>`).join('');
+		const el = this.$selectPageForm.querySelector('[name="page"]');
+		if (el.matches('datalist')) {
+			this.fillDatalistOptions(el, pages.map(file => file.path));
+		}
+		else {
+			const paths = pages.map(file => file.path);
+			const labels = this.removeCommonPathStarts(paths);
+			this.fillSelectOptions(el, paths.map((path, i) => [path, labels[i]]));
+		}
 	}
 
 	loadContentForm(collection, values) {
 		this.$contentForm.innerHTML = '';
 		this.$contentForm.closest('form').hidden = false;
-		this.$contentForm.append(createFieldset(collection.fields, collection.label));
+		this.$contentForm.append(CmsUI.createFieldset(collection.fields, collection.label));
 
 		if (values) {
 			const fs = this.$contentForm.querySelector('fieldset');
@@ -45,8 +51,29 @@ class CmsUI {
 		}
 	}
 
-	fillSelectOptions(el, options) {
+	removeCommonPathStarts(paths) {
+		const maxSections = Math.max(...paths.map(path => path.split('/').length));
+		for ( let i = 0; i < maxSections - 1; i++ ) {
+			const sections = paths.map(path => path.split('/', 2)[0]);
+			if (sections.join('') == sections[0].repeat(paths.length)) {
+				paths = paths.map(path => path.split('/').slice(1).join('/'));
+			}
+			else {
+				return paths;
+			}
+		}
+		return paths;
+	}
 
+	fillSelectOptions(sel, options) {
+		sel.innerHTML = '';
+		options.forEach(opt => {
+			const [value, label] = opt instanceof Array ? opt : [opt, opt];
+			const el = document.createElement('option');
+			el.value = value;
+			el.textContent = label;
+			sel.append(el);
+		});
 	}
 
 	fillDatalistOptions(el, options) {
@@ -56,6 +83,57 @@ class CmsUI {
 			opt.value = value;
 			el.append(opt);
 		});
+	}
+
+	static createFieldset(fields, title) {
+		const fs = document.createElement('fieldset');
+
+		if (title) {
+			const leg = document.createElement('legend');
+			leg.textContent = title;
+			fs.append(leg);
+		}
+		else {
+			fs.classList.add('structure');
+		}
+
+		for (let fname in fields) {
+			const field = fields[fname];
+			const row = document.createElement('fieldset');
+			row._field = field;
+			row.classList.add('widget');
+			row.dataset.widget = field.widget;
+			row.dataset.name = fname;
+			fs.append(row);
+			const leg = document.createElement('legend');
+			leg.textContent = field.label;
+			row.append(leg);
+			row.append(CmsUI.createWidget(field));
+			CmsUI.createdWidget(field, row);
+		}
+
+		return fs;
+	}
+
+	static createWidget(field) {
+		const handler = WIDGETS[field.widget];
+		if (handler) {
+			return handler.create(field);
+		}
+
+		return document.createTextNode(' ' + field.widget);
+	}
+
+	static createdWidget(field, fs) {
+		const handler = WIDGETS[field.widget];
+		if (handler) {
+			return handler.created(fs, field);
+		}
+	}
+
+	static insertAfterSpace(container, el) {
+		container.append(' ');
+		container.append(el);
 	}
 }
 
@@ -227,7 +305,7 @@ class CmsWidget {
 	create(props) {
 	}
 
-	created(fs) {
+	created(fs, props) {
 	}
 
 	getValue(el, props) {
@@ -347,7 +425,7 @@ class CmsWidgetText extends CmsWidget {
 }
 
 class CmsWidgetHidden extends CmsWidgetText {
-	created(fs) {
+	created(fs, props) {
 		fs.hidden = true;
 	}
 }
@@ -357,12 +435,57 @@ class CmsWidgetMarkdown extends CmsWidgetText {
 
 class CmsWidgetList extends CmsWidget {
 	create(props) {
-		return createFieldset(props.fields, 'Item 1');
+		return CmsUI.createFieldset(props.fields, 'Item 1');
+	}
+
+	created(el, props) {
+		CmsUI.insertAfterSpace(el.querySelector('legend'), this.makeAddButton(el, props));
+		this.addRemove(el.querySelector('fieldset'), props);
+		if (props.fields._value) {
+			el.querySelector(':scope fieldset fieldset').classList.add('structure');
+		}
+		el.append(this.makeAddButton(el, props));
+	}
+
+	makeAddButton(el, props) {
+		const btn = document.createElement('button');
+		btn.textContent = '+';
+		btn.onclick = e => {
+			e.preventDefault();
+			this.addItem(el, props);
+		};
+		return btn;
+	}
+
+	addItem(container, props) {
+		const num = container.querySelectorAll(':scope > fieldset').length+1;
+		const fs = CmsUI.createFieldset(props.fields, `Item ${num}`);
+		this.addRemove(fs, props);
+		if (props.fields._value) {
+			fs.querySelector('fieldset').classList.add('structure');
+		}
+		container.append(fs);
+		container.append(container.querySelector('legend ~ button'))
+		return fs;
+	}
+
+	addRemove(fs) {
+		const btn = document.createElement('button');
+		btn.textContent = 'x';
+		btn.onclick = e => {
+			e.preventDefault();
+			e.target.closest('fieldset').remove();
+		};
+
+		CmsUI.insertAfterSpace(fs.querySelector('legend'), btn);
 	}
 
 	getValue(el, props) {
 		const items = Array.from(el.querySelectorAll(':scope > fieldset'));
-		return items.map(fs => getFieldsetValues(fs));
+		return items.map(fs => {
+			const values = getFieldsetValues(fs);
+			return props.fields._value ? values._value : values;
+		});
 	}
 
 	setValue(el, props, value) {
@@ -372,16 +495,15 @@ class CmsWidgetList extends CmsWidget {
 
 		const L = value.length || 1;
 		for ( let n = 0; n < L; n++ ) {
-			const fs = createFieldset(props.fields, `Item ${n+1}`);
-			el.append(fs);
-			setFieldsetValues(fs, value[n]);
+			const fs = this.addItem(el, props);
+			setFieldsetValues(fs, props.fields._value ? {_value: value[n]} : value[n]);
 		}
 	}
 }
 
 class CmsWidgetObject extends CmsWidget {
 	create(props) {
-		return createFieldset(props.fields);
+		return CmsUI.createFieldset(props.fields);
 	}
 
 	getValue(el, props) {

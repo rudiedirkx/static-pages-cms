@@ -16,12 +16,11 @@ fieldset.structure {
 	padding: 0;
 	margin: 0;
 }
+fieldset.structure > legend {
+	display: none;
+}
 fieldset, button {
 	margin: 1em 0;
-}
-
-.widget[data-widget="hidden"] {
-	display: none;
 }
 
 input[type="text"],
