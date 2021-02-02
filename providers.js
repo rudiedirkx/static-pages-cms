@@ -35,7 +35,7 @@ const CmsCollectionHelpersCustom = {
 				field.fields = this.extractFieldsCustom(field.fields);
 			}
 			else if (field.field) {
-				field.fields = this.extractFieldsCustom({_value: field.field});
+				field.fields = this.extractFieldsCustom({[CmsWidgetList.ONLY_NAME]: field.field});
 				delete field.field;
 			}
 			fields[fname] = new CmsField(field.widget, field.label, field);
@@ -90,9 +90,12 @@ const CmsCollectionHelpersNetlify = {
 				field.fields = this.extractFieldsNetlify(field.fields);
 			}
 			else if (field.field) {
-				field.field.name = '_value';
+				field.field.name = CmsWidgetList.ONLY_NAME;
 				field.fields = this.extractFieldsNetlify([field.field]);
 				delete field.field;
+			}
+			else if (field.widget == 'list') {
+				field.fields = this.extractFieldsNetlify([{name: CmsWidgetList.ONLY_NAME, widget: 'string'}]);
 			}
 
 			fields[field.name] = new CmsField(field.widget, field.label, field);

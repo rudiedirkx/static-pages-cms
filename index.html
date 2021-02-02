@@ -193,9 +193,8 @@ $elCreateButtons.addEventListener('click', e => {
 $elContentForm.closest('form').addEventListener('submit', e => {
 	e.preventDefault();
 	const fs = $elContentForm.querySelector('fieldset');
-	const values = getFieldsetValues(fs);
+	const values = {...cms.content, ...getFieldsetValues(fs)};
 	console.log(values);
-	// @todo Keep original values that are not in the form, like `layout`
 	const {body, ...fm} = values;
 	const md = `---\n${jsyaml.dump(fm).trim()}\n---\n\n${body}\n`
 	console.log(md);

@@ -23,6 +23,12 @@ fieldset, button {
 	margin: 1em 0;
 }
 
+fieldset.widget[data-widget="list"] > legend,
+fieldset.widget[data-widget="object"] > legend {
+	text-transform: uppercase;
+	font-weight: bold;
+}
+
 input[type="text"],
 textarea {
 	width: 700px;

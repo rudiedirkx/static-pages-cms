@@ -150,6 +150,7 @@ class CmsContext {
 		this.media = [];
 
 		this.collection = null;
+		this.content = null;
 	}
 
 	findCollectionFromPath(path) {
@@ -188,6 +189,8 @@ class CmsContext {
 	}
 
 	loadContentForm(collection, values) {
+		this.content = values || {};
+
 		if (collection instanceof CmsCollection) {
 			this.setCurrentCollection(null);
 			this.ui.loadContentForm(collection, values);
@@ -341,6 +344,17 @@ class CmsWidgetInput extends CmsWidget {
 	}
 }
 
+class CmsWidgetNumber extends CmsWidgetInput {
+	constructor() {
+		super('number');
+	}
+
+	getValue(el, props) {
+		const val = super.getValue(el, props);
+		return val === '' ? null : parseFloat(val);
+	}
+}
+
 class CmsWidgetBoolean extends CmsWidgetInput {
 	create(props) {
 		return this.createInput('checkbox');
@@ -434,6 +448,8 @@ class CmsWidgetMarkdown extends CmsWidgetText {
 }
 
 class CmsWidgetList extends CmsWidget {
+	static ONLY_NAME = '__value';
+
 	create(props) {
 		return CmsUI.createFieldset(props.fields, 'Item 1');
 	}
@@ -441,7 +457,7 @@ class CmsWidgetList extends CmsWidget {
 	created(el, props) {
 		CmsUI.insertAfterSpace(el.querySelector('legend'), this.makeAddButton(el, props));
 		this.addRemove(el.querySelector('fieldset'), props);
-		if (props.fields._value) {
+		if (props.fields[CmsWidgetList.ONLY_NAME]) {
 			el.querySelector(':scope fieldset fieldset').classList.add('structure');
 		}
 		el.append(this.makeAddButton(el, props));
@@ -461,7 +477,7 @@ class CmsWidgetList extends CmsWidget {
 		const num = container.querySelectorAll(':scope > fieldset').length+1;
 		const fs = CmsUI.createFieldset(props.fields, `Item ${num}`);
 		this.addRemove(fs, props);
-		if (props.fields._value) {
+		if (props.fields[CmsWidgetList.ONLY_NAME]) {
 			fs.querySelector('fieldset').classList.add('structure');
 		}
 		container.append(fs);
@@ -484,7 +500,7 @@ class CmsWidgetList extends CmsWidget {
 		const items = Array.from(el.querySelectorAll(':scope > fieldset'));
 		return items.map(fs => {
 			const values = getFieldsetValues(fs);
-			return props.fields._value ? values._value : values;
+			return props.fields[CmsWidgetList.ONLY_NAME] ? values[CmsWidgetList.ONLY_NAME] : values;
 		});
 	}
 
@@ -496,7 +512,7 @@ class CmsWidgetList extends CmsWidget {
 		const L = value.length || 1;
 		for ( let n = 0; n < L; n++ ) {
 			const fs = this.addItem(el, props);
-			setFieldsetValues(fs, props.fields._value ? {_value: value[n]} : value[n]);
+			setFieldsetValues(fs, props.fields[CmsWidgetList.ONLY_NAME] ? {[CmsWidgetList.ONLY_NAME]: value[n]} : value[n]);
 		}
 	}
 }
@@ -520,7 +536,7 @@ const WIDGETS = {
 	"string": new CmsWidgetInput('text'),
 	"date": new CmsWidgetInput('date'),
 	"datetime": new CmsWidgetInput('datetime'),
-	"number": new CmsWidgetInput('number'),
+	"number": new CmsWidgetNumber(),
 	"boolean": new CmsWidgetBoolean('checkbox'),
 	"file": new CmsWidgetFile(),
 	"image": new CmsWidgetFile(),
