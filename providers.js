@@ -234,7 +234,7 @@ class CmsProviderJekyllOnNetlify extends CmsProvider {
 
 Object.assign(CmsProviderJekyllOnNetlify.prototype, CmsCollectionHelpersNetlify);
 
-const PROVIDERS = {
+CmsContext.PROVIDERS = {
 	"Github pages": CmsProviderGithubPages,
 	"Hugo on Netlify": CmsProviderHugoOnNetlify,
 	"Jekyll on Netlify": CmsProviderJekyllOnNetlify,

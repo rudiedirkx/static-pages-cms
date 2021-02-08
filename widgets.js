@@ -267,7 +267,7 @@ class CmsWidgetObject extends CmsWidget {
 	}
 }
 
-const WIDGETS = {
+CmsContext.WIDGETS = {
 	"hidden": new CmsWidgetHidden(),
 	"string": new CmsWidgetInput('text'),
 	"date": new CmsWidgetInput('date'),

@@ -104,7 +104,7 @@ $elConfigForm.addEventListener('submit', function(e) {
 	const repo = this.elements.repo.value;
 	const pieces = repo.split(':');
 
-	const provider = new PROVIDERS[this.elements.provider.value];
+	const provider = new CmsContext.PROVIDERS[this.elements.provider.value];
 	cms = new CmsContext(cmsUi, provider);
 
 	cms.getTree(pieces[0], pieces[1] || 'master').then(tree => {
@@ -187,8 +187,16 @@ $elCreateButtons.addEventListener('click', e => {
 $elContentForm.addEventListener('click', e => {
 	const leg = e.target.closest('.legend .label');
 	if (leg) {
-		document.querySelectorAll('.root.hilited, .widget.hilited, .item.hilited').forEach(el => el.classList.remove('hilited'));
-		leg.closest('.root, .widget, .item').classList.add('hilited');
+		const sel1 = '.root, .widget, .item';
+		const sel2 = '.root.hilited, .widget.hilited, .item.hilited';
+		const fs = leg.closest(sel1);
+		if (fs.matches(sel2)) {
+			fs.classList.remove('hilited');
+		}
+		else {
+			document.querySelectorAll(sel2).forEach(el => el.classList.remove('hilited'));
+			fs.classList.add('hilited');
+		}
 	}
 });
 

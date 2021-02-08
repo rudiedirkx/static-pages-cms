@@ -128,7 +128,7 @@ class CmsUI {
 	}
 
 	static createWidget(field, parents = []) {
-		const handler = WIDGETS[field.widget];
+		const handler = CmsContext.WIDGETS[field.widget];
 		if (handler) {
 			return handler.create(field, parents);
 		}
@@ -137,7 +137,7 @@ class CmsUI {
 	}
 
 	static createdWidget(field, fs) {
-		const handler = WIDGETS[field.widget];
+		const handler = CmsContext.WIDGETS[field.widget];
 		if (handler) {
 			return handler.created(fs, field);
 		}
@@ -150,7 +150,7 @@ class CmsUI {
 
 	static setFieldsetValues(fs, values) {
 		for (let el of fs.querySelectorAll(':scope > .widget[data-widget][data-name]')) {
-			const handler = WIDGETS[el.dataset.widget];
+			const handler = CmsContext.WIDGETS[el.dataset.widget];
 			handler.setValue(el, el._field, values[el.dataset.name]);
 		}
 	}
@@ -158,7 +158,7 @@ class CmsUI {
 	static getFieldsetValues(fs, cms) {
 		const values = {};
 		for (let el of fs.querySelectorAll(':scope > .widget[data-widget][data-name]')) {
-			const handler = WIDGETS[el.dataset.widget];
+			const handler = CmsContext.WIDGETS[el.dataset.widget];
 			values[el.dataset.name] = handler.getValue(el, el._field, cms);
 		}
 		return values;
@@ -362,8 +362,8 @@ class CmsField {
 	}
 
 	prepareOptions(options) {
-		if (WIDGETS[this.widget]) {
-			WIDGETS[this.widget].prepareOptions(options);
+		if (CmsContext.WIDGETS[this.widget]) {
+			CmsContext.WIDGETS[this.widget].prepareOptions(options);
 		}
 		return options;
 	}
