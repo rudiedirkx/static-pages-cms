@@ -1,23 +1,24 @@
+"use strict";
+
 class CmsWidget {
 	prepareOptions(options) {
 	}
 
-	create(props) {
+	create(field, parents = []) {
 	}
 
-	created(fs, props) {
+	created($field, field) {
 	}
 
-	getValue(el, props) {
+	getValue($field, field, cms) {
 	}
 
-	setValue(el, props, val) {
+	setValue($field, field, val) {
 	}
 
 	createInput(type) {
 		const el = document.createElement('input');
 		el.type = type || 'text';
-		DEV && el.type != 'file' && (el.value = randomChar());
 		return el;
 	}
 }
@@ -28,16 +29,16 @@ class CmsWidgetInput extends CmsWidget {
 		this.type = type;
 	}
 
-	create(props) {
+	create(field, parents = []) {
 		return this.createInput(this.type);
 	}
 
-	getValue(el, props) {
-		return el.querySelector('input').value;
+	getValue($field, field, cms) {
+		return $field.querySelector('input').value;
 	}
 
-	setValue(el, props, val) {
-		return el.querySelector('input').value = val == null ? '' : val;
+	setValue($field, field, val) {
+		return $field.querySelector('input').value = val == null ? '' : val;
 	}
 }
 
@@ -46,28 +47,28 @@ class CmsWidgetNumber extends CmsWidgetInput {
 		super('number');
 	}
 
-	getValue(el, props) {
-		const val = super.getValue(el, props);
+	getValue($field, field, cms) {
+		const val = super.getValue($field, field, cms);
 		return val === '' ? null : parseFloat(val);
 	}
 }
 
 class CmsWidgetBoolean extends CmsWidgetInput {
-	create(props) {
+	create(field, parents = []) {
 		return this.createInput('checkbox');
 	}
 
-	getValue(el, props) {
-		return el.querySelector('input').checked;
+	getValue($field, field, cms) {
+		return $field.querySelector('input').checked;
 	}
 
-	setValue(el, props, val) {
-		return el.querySelector('input').checked = val === true;
+	setValue($field, field, val) {
+		return $field.querySelector('input').checked = val === true;
 	}
 }
 
 class CmsWidgetFile extends CmsWidget {
-	create(props) {
+	create(field, parents = []) {
 		const div = document.createElement('div');
 		div.append(document.createElement('output'));
 		div.append(' ');
@@ -75,33 +76,42 @@ class CmsWidgetFile extends CmsWidget {
 		return div;
 	}
 
-	getValue(el, props) {
-		const file = el.querySelector('input').files[0];
-		return file ? file.name : el.querySelector('output').value;
+	getValue($field, field, cms) {
+		const file = $field.querySelector('input').files[0];
+		const curr = $field.querySelector('output').value;
+		return file ? cms.newFile(file) : curr;
 	}
 
-	setValue(el, props, val) {
-		return el.querySelector('output').value = val || '';
+	setValue($field, field, val) {
+		return $field.querySelector('output').value = val || '';
+	}
+}
+
+class CmsWidgetImage extends CmsWidgetFile {
+	create(field, parents = []) {
+		const div = super.create(field, parents);
+		div.querySelector('input').accept = 'image/*';
+		return div;
 	}
 }
 
 class CmsWidgetSelect extends CmsWidget {
-	prepareOptions(props) {
-		if (props.options instanceof Array) {
-			props.options = props.options.map(opt => {
+	prepareOptions(field) {
+		if (field.options instanceof Array) {
+			field.options = field.options.map(opt => {
 				return typeof opt == 'string' ? {value: opt} : opt;
 			});
 		}
-		else if (typeof props.options == 'object') {
-			props.options = Object.entries(props.options).map(([value, label]) => {
+		else if (typeof field.options == 'object') {
+			field.options = Object.entries(field.options).map(([value, label]) => {
 				return {value, label};
 			});
 		}
 	}
 
-	create(props) {
+	create(field, parents = []) {
 		const sel = document.createElement('select');
-		[{value: '', label: '--'}, ...(props.options || [])].forEach(opt => {
+		[{value: '', label: '--'}, ...(field.options || [])].forEach(opt => {
 			const el = document.createElement('option');
 			el.value = opt.value || opt.label;
 			el.textContent = opt.label || opt.value;
@@ -110,34 +120,33 @@ class CmsWidgetSelect extends CmsWidget {
 		return sel;
 	}
 
-	getValue(el, props) {
-		return el.querySelector('select').value;
+	getValue($field, field, cms) {
+		return $field.querySelector('select').value;
 	}
 
-	setValue(el, props, val) {
-		return el.querySelector('select').value = val == null ? '' : val;
+	setValue($field, field, val) {
+		return $field.querySelector('select').value = val == null ? '' : val;
 	}
 }
 
 class CmsWidgetText extends CmsWidget {
-	create(props) {
+	create(field, parents = []) {
 		const el = document.createElement('textarea');
-		DEV && (el.value = randomChar());
 		return el;
 	}
 
-	getValue(el, props) {
-		return el.querySelector('textarea').value;
+	getValue($field, field, cms) {
+		return $field.querySelector('textarea').value;
 	}
 
-	setValue(el, props, val) {
-		return el.querySelector('textarea').value = val == null ? '' : val;
+	setValue($field, field, val) {
+		return $field.querySelector('textarea').value = val == null ? '' : val;
 	}
 }
 
 class CmsWidgetHidden extends CmsWidgetText {
-	created(fs, props) {
-		fs.hidden = true;
+	created($field, field) {
+		$field.hidden = true;
 	}
 }
 
@@ -147,84 +156,114 @@ class CmsWidgetMarkdown extends CmsWidgetText {
 class CmsWidgetList extends CmsWidget {
 	static ONLY_NAME = '__value';
 
-	create(props) {
-		return CmsUI.createFieldset(props.fields, 'Item 1');
+	create(field, parents = []) {
+		return CmsUI.createFieldset(field.fields, {
+			title: `Item 1`,
+			className: 'item',
+			parents,
+		});
 	}
 
-	created(el, props) {
-		CmsUI.insertAfterSpace(el.querySelector('legend'), this.makeAddButton(el, props));
-		this.addRemove(el.querySelector('fieldset'), props);
-		if (props.fields[CmsWidgetList.ONLY_NAME]) {
-			el.querySelector(':scope fieldset fieldset').classList.add('structure');
+	created($field, field) {
+		this.addCount($field);
+		CmsUI.insertAfterSpace($field.querySelector('.legend'), this.makeAddButton($field, field));
+		this.addRemove($field.querySelector('.item'), field);
+		if (field.fields[CmsWidgetList.ONLY_NAME]) {
+			$field.querySelector(':scope > .item > .widget').classList.add('structure');
 		}
-		el.append(this.makeAddButton(el, props));
+		$field.append(this.makeAddButton($field, field));
 	}
 
-	makeAddButton(el, props) {
+	addCount($field) {
+		const leg = $field.querySelector('.legend');
+		const ct = document.createElement('span');
+		ct.classList.add('item-count');
+		ct.textContent = 1;
+		leg.append(' (');
+		leg.append(ct);
+		leg.append(') ');
+	}
+
+	updateCount($field) {
+		const items = $field.querySelectorAll(':scope > .item');
+		const ct = $field.querySelector('.item-count');
+		ct.textContent = items.length;
+	}
+
+	makeAddButton($field, field) {
 		const btn = document.createElement('button');
 		btn.textContent = '+';
+		btn.title = `Add one ${field.label_singular || field.label}`;
 		btn.onclick = e => {
 			e.preventDefault();
-			this.addItem(el, props);
+			this.addItem($field, field);
 		};
 		return btn;
 	}
 
-	addItem(container, props) {
-		const num = container.querySelectorAll(':scope > fieldset').length+1;
-		const fs = CmsUI.createFieldset(props.fields, `Item ${num}`);
-		this.addRemove(fs, props);
-		if (props.fields[CmsWidgetList.ONLY_NAME]) {
-			fs.querySelector('fieldset').classList.add('structure');
+	addItem($field, field) {
+		const parents = $field.closest('.widget').dataset.fullname.split('/');
+		const num = $field.querySelectorAll(':scope > .item').length+1;
+		const $item = CmsUI.createFieldset(field.fields, {
+			title: `Item ${num}`,
+			className: 'item',
+			parents,
+		});
+		this.addRemove($item, field);
+		if (field.fields[CmsWidgetList.ONLY_NAME]) {
+			$item.querySelector('.widget').classList.add('structure');
 		}
-		container.append(fs);
-		container.append(container.querySelector('legend ~ button'))
-		return fs;
+		$field.append($item);
+		$field.append($field.querySelector('.legend ~ button'))
+		this.updateCount($field);
+		return $item;
 	}
 
-	addRemove(fs) {
+	addRemove($field) {
 		const btn = document.createElement('button');
 		btn.textContent = 'x';
 		btn.onclick = e => {
 			e.preventDefault();
-			e.target.closest('fieldset').remove();
+			const $field = e.target.closest('.widget');
+			e.target.closest('.item').remove();
+			this.updateCount($field);
 		};
 
-		CmsUI.insertAfterSpace(fs.querySelector('legend'), btn);
+		CmsUI.insertAfterSpace($field.querySelector('.legend'), btn);
 	}
 
-	getValue(el, props) {
-		const items = Array.from(el.querySelectorAll(':scope > fieldset'));
-		return items.map(fs => {
-			const values = getFieldsetValues(fs);
-			return props.fields[CmsWidgetList.ONLY_NAME] ? values[CmsWidgetList.ONLY_NAME] : values;
+	getValue($field, field, cms) {
+		const items = Array.from($field.querySelectorAll(':scope > .item'));
+		return items.map($item => {
+			const values = CmsUI.getFieldsetValues($item, cms);
+			return field.fields[CmsWidgetList.ONLY_NAME] ? values[CmsWidgetList.ONLY_NAME] : values;
 		});
 	}
 
-	setValue(el, props, value) {
+	setValue($field, field, value) {
 		if (!value || !value.length) return;
 
-		el.querySelectorAll(':scope > fieldset').forEach(fs => fs.remove());
+		$field.querySelectorAll(':scope > .item').forEach($item => $item.remove());
 
 		const L = value.length || 1;
 		for ( let n = 0; n < L; n++ ) {
-			const fs = this.addItem(el, props);
-			setFieldsetValues(fs, props.fields[CmsWidgetList.ONLY_NAME] ? {[CmsWidgetList.ONLY_NAME]: value[n]} : value[n]);
+			const $item = this.addItem($field, field);
+			CmsUI.setFieldsetValues($item, field.fields[CmsWidgetList.ONLY_NAME] ? {[CmsWidgetList.ONLY_NAME]: value[n]} : value[n]);
 		}
 	}
 }
 
 class CmsWidgetObject extends CmsWidget {
-	create(props) {
-		return CmsUI.createFieldset(props.fields);
+	create(field, parents = []) {
+		return CmsUI.createFieldset(field.fields, {parents});
 	}
 
-	getValue(el, props) {
-		return getFieldsetValues(el.querySelector('fieldset'));
+	getValue($field, field, cms) {
+		return CmsUI.getFieldsetValues($field.querySelector('.structure'), cms);
 	}
 
-	setValue(el, props, value) {
-		setFieldsetValues(el.querySelector('fieldset'), value || {});
+	setValue($field, field, value) {
+		CmsUI.setFieldsetValues($field.querySelector('.structure'), value || {});
 	}
 }
 
@@ -236,7 +275,7 @@ const WIDGETS = {
 	"number": new CmsWidgetNumber(),
 	"boolean": new CmsWidgetBoolean('checkbox'),
 	"file": new CmsWidgetFile(),
-	"image": new CmsWidgetFile(),
+	"image": new CmsWidgetImage(),
 	"select": new CmsWidgetSelect(),
 	"text": new CmsWidgetText(),
 	"markdown": new CmsWidgetText(),

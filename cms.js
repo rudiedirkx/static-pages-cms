@@ -23,24 +23,22 @@ class CmsUI {
 	loadPages(pages) {
 		const el = this.$selectPageForm.querySelector('[name="page"]');
 		if (el.matches('datalist')) {
-			this.fillDatalistOptions(el, pages.map(file => file.path));
+			CmsUI.fillDatalistOptions(el, pages.map(file => file.path));
 		}
 		else {
 			const paths = pages.map(file => file.path);
 			const labels = this.removeCommonPathStarts(paths);
-			this.fillSelectOptions(el, paths.map((path, i) => [path, labels[i]]));
+			CmsUI.fillSelectOptions(el, paths.map((path, i) => [path, labels[i]]));
 		}
 	}
 
-	loadContentForm(collection, values) {
+	loadContentForm(collection) {
 		this.$contentForm.innerHTML = '';
 		this.$contentForm.closest('form').hidden = false;
-		this.$contentForm.append(CmsUI.createFieldset(collection.fields, collection.label));
-
-		if (values) {
-			const fs = this.$contentForm.querySelector('fieldset');
-			setFieldsetValues(fs, values);
-		}
+		this.$contentForm.append(CmsUI.createFieldset(collection.fields, {
+			title: collection.label,
+			className: 'root',
+		}));
 	}
 
 	markOpenCollection(collection) {
@@ -65,7 +63,7 @@ class CmsUI {
 		return paths;
 	}
 
-	fillSelectOptions(sel, options) {
+	static fillSelectOptions(sel, options) {
 		sel.innerHTML = '';
 		options.forEach(opt => {
 			const [value, label] = opt instanceof Array ? opt : [opt, opt];
@@ -76,7 +74,7 @@ class CmsUI {
 		});
 	}
 
-	fillDatalistOptions(el, options) {
+	static fillDatalistOptions(el, options) {
 		el.innerHTML = '';
 		options.forEach(value => {
 			const opt = document.createElement('option');
@@ -85,40 +83,54 @@ class CmsUI {
 		});
 	}
 
-	static createFieldset(fields, title) {
+	static createLegend(label) {
+		const leg = document.createElement('legend');
+		leg.classList.add('legend');
+		const lbl = document.createElement('span');
+		lbl.classList.add('label');
+		lbl.textContent = label;
+		leg.append(lbl);
+		return leg;
+	}
+
+	static createFieldset(fields, {title, className, parents = []} = {}) {
 		const fs = document.createElement('fieldset');
+		fs.open = true;
 
 		if (title) {
-			const leg = document.createElement('legend');
-			leg.textContent = title;
-			fs.append(leg);
+			fs.append(CmsUI.createLegend(title));
 		}
 		else {
 			fs.classList.add('structure');
 		}
 
+		if (className) {
+			fs.classList.add(className);
+		}
+
 		for (let fname in fields) {
 			const field = fields[fname];
+			const parents1 = parents.concat(fname);
 			const row = document.createElement('fieldset');
+			row.open = true;
 			row._field = field;
 			row.classList.add('widget');
 			row.dataset.widget = field.widget;
 			row.dataset.name = fname;
+			row.dataset.fullname = '/' + parents1.join('/');
+			row.append(CmsUI.createLegend(field.label));
+			row.append(CmsUI.createWidget(field, parents1));
 			fs.append(row);
-			const leg = document.createElement('legend');
-			leg.textContent = field.label;
-			row.append(leg);
-			row.append(CmsUI.createWidget(field));
 			CmsUI.createdWidget(field, row);
 		}
 
 		return fs;
 	}
 
-	static createWidget(field) {
+	static createWidget(field, parents = []) {
 		const handler = WIDGETS[field.widget];
 		if (handler) {
-			return handler.create(field);
+			return handler.create(field, parents);
 		}
 
 		return document.createTextNode(' ' + field.widget);
@@ -135,12 +147,32 @@ class CmsUI {
 		container.append(' ');
 		container.append(el);
 	}
+
+	static setFieldsetValues(fs, values) {
+		for (let el of fs.querySelectorAll(':scope > .widget[data-widget][data-name]')) {
+			const handler = WIDGETS[el.dataset.widget];
+			handler.setValue(el, el._field, values[el.dataset.name]);
+		}
+	}
+
+	static getFieldsetValues(fs, cms) {
+		const values = {};
+		for (let el of fs.querySelectorAll(':scope > .widget[data-widget][data-name]')) {
+			const handler = WIDGETS[el.dataset.widget];
+			values[el.dataset.name] = handler.getValue(el, el._field, cms);
+		}
+		return values;
+	}
 }
 
 class CmsContext {
 	constructor(ui, provider) {
 		this.ui = ui;
 		this.provider = provider;
+
+		this.repo = null;
+		this.branch = null;
+		this.commit = null;
 
 		this.mediaFolder = null;
 		this.mediaPath = null;
@@ -150,7 +182,49 @@ class CmsContext {
 		this.media = [];
 
 		this.collection = null;
+		this.page = null;
 		this.content = null;
+		this.newFiles = [];
+	}
+
+	async getTree(repo, branch) {
+		this.repo = repo;
+		this.branch = branch || 'master';
+
+		const uri = `/repos/${this.repo}/git/trees/${this.branch}?recursive=1`;
+		return github.get(uri).then(rsp => {
+			if (!rsp.tree) throw new Error(`Can't find files in repo '${this.repo}:${this.branch}':\n` + JSON.stringify(rsp, null, '  '));
+			this.commit = rsp.sha;
+			return rsp.tree;
+		});
+	}
+
+	newFile(file) {
+		if (!this.mediaFolder) throw new Error(`Can't upload files. Media folder unknown.`);
+
+		const name = CmsContext.filename(file.name);
+console.log(name);
+
+		const path = this.mediaFolder + '/' + name;
+
+		if (this.media.some(f => f.path == path)) throw new Error(`File exists, and I don't overwrite media:\n${path}`);
+
+		if (!this.newFiles.some(f => f.path == path)) {
+			this.newFiles.push(new CmsFile(path, file));
+console.log(this.newFiles.slice(-1)[0]);
+		}
+
+		return this.mediaPath + '/' + name;
+	}
+
+	getValues() {
+		const fs = this.ui.$contentForm.querySelector('.root');
+		return CmsUI.getFieldsetValues(fs, this);
+	}
+
+	setValues(values) {
+		const fs = this.ui.$contentForm.querySelector('.root');
+		return CmsUI.setFieldsetValues(fs, values);
 	}
 
 	findCollectionFromPath(path) {
@@ -189,20 +263,57 @@ class CmsContext {
 	}
 
 	loadContentForm(collection, values) {
+		this.page = null;
 		this.content = values || {};
+		this.newFiles = [];
 
 		if (collection instanceof CmsCollection) {
 			this.setCurrentCollection(null);
-			this.ui.loadContentForm(collection, values);
+			this.ui.loadContentForm(collection);
 		}
 		else {
 			this.setCurrentCollection(collection);
-			this.ui.loadContentForm(this.collections[collection], values);
+			this.ui.loadContentForm(this.collections[collection]);
+		}
+
+		if (values) {
+			this.setValues(values);
 		}
 	}
 
 	setCurrentCollection(collection) {
 		this.ui.markOpenCollection(this.collection = collection);
+	}
+
+	static filename(str) {
+		return str.trim().toLowerCase().replace(/[^a-z0-9\-\._]+/ig, '-').replace(/(^\-+|\-+$)/g, '').replace(/\-+/g, '-');
+	}
+
+	static parseContent(text) {
+		const frontMatter = text.match(/^---[\r\n]+([\w\W]+?)---([\r\n]|$)/);
+		if (!frontMatter) throw new Error("Can't extract front matter from text:\n" + text);
+
+		const body = text.substr(frontMatter[0].length).trim();
+		return {body, ...this.parseYaml(frontMatter[1])};
+	}
+
+	static parseConfig(text) {
+		return this.parseYaml(text);
+	}
+
+	static parseYaml(text) {
+		return jsyaml.load(text, {schema: jsyaml.JSON_SCHEMA});
+	}
+}
+
+class CmsFile {
+	constructor(path, content) {
+		this.path = path;
+		this.content = content;
+	}
+
+	async getContent() {
+		return this.content instanceof Blob ? this.content.arrayBuffer() : this.content;
 	}
 }
 

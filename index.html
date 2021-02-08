@@ -3,9 +3,11 @@
 
 <script>
 const DEV = true;
-const GH_APP_DEV = location.hostname.includes('staticpagescms.');
+
+const GH_APP_DEV = !location.hostname.includes('.github.io');
 const GH_APP_ENV = GH_APP_DEV ? 'dev' : 'prod';
 const GH_APP_ID = GH_APP_DEV ? '1a620656396aa0d6b5c2' : '2f0e7f2d5e38b39fd9eb';
+const GH_TOKEN_ENDPOINT = 'https://ci7luqxjw2.execute-api.eu-central-1.amazonaws.com/default/static-pages-cms-github-token';
 </script>
 
 <p>Drag & drop a markdown/content file on here, OR:</p>
@@ -32,6 +34,7 @@ const GH_APP_ID = GH_APP_DEV ? '1a620656396aa0d6b5c2' : '2f0e7f2d5e38b39fd9eb';
 		<option>Github pages</option>
 	</select>
 	<button>Load</button>
+	<button class="remember">Remember</button>
 </form>
 
 <form hidden id="page">
@@ -39,6 +42,7 @@ const GH_APP_ID = GH_APP_DEV ? '1a620656396aa0d6b5c2' : '2f0e7f2d5e38b39fd9eb';
 	<datalist id="dl-pages"></datalist> -->
 	<select name="page"></select>
 	<button>Load</button>
+	<button class="remember">Remember</button>
 	|
 	New: <span id="create-buttons"></span>
 </form>
@@ -52,32 +56,17 @@ const GH_APP_ID = GH_APP_DEV ? '1a620656396aa0d6b5c2' : '2f0e7f2d5e38b39fd9eb';
 <script src="cms.js"></script>
 <script src="widgets.js"></script>
 <script src="providers.js"></script>
-<script async defer src="https://unpkg.com/js-yaml@3.12.0/dist/js-yaml.js"></script>
+<script async defer src="https://cdn.jsdelivr.net/npm/js-yaml@3.14.1/dist/js-yaml.min.js"></script>
+<script async defer src="https://cdn.jsdelivr.net/npm/js-base64@3.6.0/base64.min.js"></script>
 <script>
-const github = new GithubAuth(GH_APP_ID, GH_APP_ENV);
+const github = new GithubAuth(GH_APP_ID, GH_APP_ENV, GH_TOKEN_ENDPOINT);
+const params = new URLSearchParams(location.hash.substr(1));
 
 window.addEventListener('load', e => {
 	github.process() && loadRepos();
 });
 
-function parseContent(text) {
-	const frontMatter = text.match(/^---[\r\n]+([\w\W]+?)---([\r\n]|$)/);
-	if (!frontMatter) throw new Error("Can't extract front matter from text:\n" + text);
-
-	const body = text.substr(frontMatter[0].length).trim();
-	return {body, ...parseFrontMatterYaml(frontMatter[1])};
-}
-
-function parseFrontMatterYaml(text) {
-	return jsyaml.load(text, {schema: jsyaml.JSON_SCHEMA});
-}
-
-function parseConfigYaml(text) {
-	return jsyaml.load(text, {schema: jsyaml.JSON_SCHEMA});
-}
-
 function loadRepos() {
-	const params = new URLSearchParams(location.hash.substr(1));
 	if (params.get('repo')) {
 		$elConfigForm.elements.repo.value = params.get('repo');
 		if (params.get('provider')) {
@@ -89,37 +78,16 @@ function loadRepos() {
 
 	if (DEV) return;
 
-	const sel = $elConfigForm.querySelector('select, datalist');
-	sel.innerHTML = '';
-	github.get('https://api.github.com/user/repos?per_page=20&sort=pushed').then(rsp => {
-		rsp.forEach(repo => {
-			const el = document.createElement('option');
-			el.value = repo.full_name + ':' + repo.default_branch;
-			sel.matches('select') && (el.textContent = repo.full_name);
-			sel.append(el);
-		});
+	github.getRepos().then(rsp => {
+		const el = $elConfigForm.querySelector('select, datalist');
+		const options = rsp.map(repo => repo.full_name + ':' + repo.default_branch);
+		CmsUI.fillDatalistOptions(el, options);
 	});
 }
 
 // ==== //
 
 const randomChar = () => String.fromCodePoint(65 + parseInt(26 * Math.random()));
-
-function setFieldsetValues(fs, values) {
-	for (let el of fs.querySelectorAll(':scope > fieldset[data-widget][data-name]')) {
-		const handler = WIDGETS[el.dataset.widget];
-		handler.setValue(el, el._field, values[el.dataset.name]);
-	}
-}
-
-function getFieldsetValues(fs) {
-	const values = {};
-	for (let el of fs.querySelectorAll(':scope > fieldset[data-widget][data-name]')) {
-		const handler = WIDGETS[el.dataset.widget];
-		values[el.dataset.name] = handler.getValue(el, el._field);
-	}
-	return values;
-}
 
 // ==== //
 
@@ -134,33 +102,48 @@ var cms;
 $elConfigForm.addEventListener('submit', function(e) {
 	e.preventDefault();
 	const repo = this.elements.repo.value;
-	const provider = new PROVIDERS[this.elements.provider.value];
+	const pieces = repo.split(':');
 
+	const provider = new PROVIDERS[this.elements.provider.value];
 	cms = new CmsContext(cmsUi, provider);
 
-	const pieces = repo.split(':');
-	const url = `https://api.github.com/repos/${pieces[0]}/git/trees/${pieces[1]||'master'}?recursive=1`;
-	const finder = names => file => names.includes(file.path);
-	github.get(url).then(rsp => {
-		if (!rsp.tree) throw new Error(`Can't find files in repo '${repo}':\n` + JSON.stringify(rsp, null, '  '));
-
-		const file = provider.findConfigFile(rsp.tree);
-		if (!file) throw new Error(`Can't find config file in repo '${repo}'\n` + JSON.stringify(rsp.tree, null, '  '));
+	cms.getTree(pieces[0], pieces[1] || 'master').then(tree => {
+		const file = cms.provider.findConfigFile(tree);
+		if (!file) throw new Error(`Can't find config file in repo '${cms.repo}'\n` + JSON.stringify(tree, null, '  '));
 
 		// Load collections
-		github.get(file.url).then(cfgRsp => {
-			const text = github.b64decode(cfgRsp.content);
+		github.getFile(file.url).then(async cfgRsp => {
+			const text = cfgRsp.raw;
 console.log(text);
-			const config = parseConfigYaml(text);
+			const config = CmsContext.parseConfig(text);
 			cms.loadConfig(config);
 			cms.loadCollections(config); // .then(x => console.log('config from github', x));
 
-			cms.loadPages(rsp.tree); // .then(x => console.log('pages from github', x));
-			cms.loadMedia(rsp.tree); // .then(x => console.log('media from github', x));
+			await cms.loadPages(tree); // .then(x => console.log('pages from github', x));
+			cms.loadMedia(tree); // .then(x => console.log('media from github', x));
 
 			$elPageForm.hidden = false;
+
+			const openPage = params.get('page');
+			if (openPage) {
+				const sel = $elPageForm.querySelector('[name="page"]');
+				sel.value = openPage;
+				if (sel.value == openPage) {
+					$elPageForm.dispatchEvent(new CustomEvent('submit'));
+				}
+				else {
+					sel.selectedIndex = 0;
+				}
+			}
 		});
 	});
+});
+
+$elConfigForm.querySelector('.remember').addEventListener('click', e => {
+	e.preventDefault();
+	const repo = $elConfigForm.elements.repo.value;
+	const provider = $elConfigForm.elements.provider.value;
+	location.hash = `repo=${encodeURIComponent(repo)}&provider=${encodeURIComponent(provider)}`;
 });
 
 $elPageForm.addEventListener('submit', e => {
@@ -171,16 +154,26 @@ $elPageForm.addEventListener('submit', e => {
 	cms.setCurrentCollection(null);
 	var collection = cms.findCollectionFromPath(file.path);
 
-	github.get(file.url).then(rsp => {
-		const text = github.b64decode(rsp.content);
-		const values = parseContent(text);
+	github.getFile(file.url).then(rsp => {
+		const text = rsp.raw;
+console.log(text);
+		const values = CmsContext.parseContent(text);
 		// console.log('content from github', values);
 
 		if (!collection) {
 			collection = CmsCollection.fromContent(values, 'Unknown content file');
 		}
 		cms.loadContentForm(collection, values);
+		cms.page = file.path;
 	});
+});
+
+$elPageForm.querySelector('.remember').addEventListener('click', e => {
+	e.preventDefault();
+	const repo = $elConfigForm.elements.repo.value;
+	const provider = $elConfigForm.elements.provider.value;
+	const page = $elPageForm.elements.page.value;
+	location.hash = `repo=${encodeURIComponent(repo)}&provider=${encodeURIComponent(provider)}&page=${encodeURIComponent(page)}`;
 });
 
 $elCreateButtons.addEventListener('click', e => {
@@ -191,14 +184,40 @@ $elCreateButtons.addEventListener('click', e => {
 	}
 });
 
-$elContentForm.closest('form').addEventListener('submit', e => {
+$elContentForm.addEventListener('click', e => {
+	const leg = e.target.closest('.legend .label');
+	if (leg) {
+		document.querySelectorAll('.root.hilited, .widget.hilited, .item.hilited').forEach(el => el.classList.remove('hilited'));
+		leg.closest('.root, .widget, .item').classList.add('hilited');
+	}
+});
+
+$elContentForm.closest('form').addEventListener('submit', async e => {
 	e.preventDefault();
-	const fs = $elContentForm.querySelector('fieldset');
-	const values = {...cms.content, ...getFieldsetValues(fs)};
-	console.log(values);
+	const fs = $elContentForm.querySelector('.root');
+	const values = {...cms.content, ...cms.getValues(fs)};
+	console.log(values, cms.newFiles);
 	const {body, ...fm} = values;
-	const md = `---\n${jsyaml.dump(fm).trim()}\n---\n\n${body}\n`
-	console.log(md);
+	const md = `---\n${jsyaml.dump(fm).trim()}\n---\n\n${body.trim()}`.trim() + "\n";
+	console.log(`"${md}"`);
+
+	if (cms.page) {
+		// Update file
+		const head = await github.getHead(cms.repo, cms.branch);
+		console.log('0. head. ', head);
+
+		if (head.object.sha != cms.commit) {
+			throw new Error(`Page state is old. Newer commits exist:\n\n${cms.commit}...${head.object.sha}`);
+		}
+
+		cms.commit = await github.commitFiles(cms.repo, cms.branch, head.object.sha, `Updating ${cms.page}`, [
+			...cms.newFiles,
+			new CmsFile(cms.page, md),
+		]);
+	}
+	else if (cms.collection) {
+		// Create file
+	}
 });
 
 document.addEventListener('dragover', e => {
@@ -208,7 +227,7 @@ document.addEventListener('drop', async e => {
 	e.preventDefault();
 	const file = e.dataTransfer.files[0];
 	const text = await file.text();
-	const values = await parseContent(text);
+	const values = CmsContext.parseContent(text);
 
 	const collection = CmsCollection.fromContent(values, 'Drag & drop content');
 

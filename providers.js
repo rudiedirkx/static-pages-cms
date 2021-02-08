@@ -153,15 +153,18 @@ class CmsProviderGithubPages extends CmsProvider {
 	}
 
 	findMediaFolder(config) {
-		return config.media_folder || 'media';
+		return config.media_folder;
 	}
 
 	findMediaPath(config) {
-		return config.public_folder || 'media';
+		return config.public_folder;
 	}
 
 	async findPages(tree, cms) {
-		return this.filterTreeExts(this.filterTreeNotFolders(tree, ['_data', '_includes', '_layouts']), ['md', 'html']);
+		return [
+			// ...this.filterTreeExts(this.filterTreeFolders(tree, ['_data']), ['yml']),
+			...this.filterTreeExts(this.filterTreeNotFolders(tree, ['_data', '_includes', '_layouts']), ['md', 'html']),
+		];
 	}
 
 	async findCollections(config) {
@@ -188,7 +191,10 @@ class CmsProviderHugoOnNetlify extends CmsProvider {
 	}
 
 	async findPages(tree, cms) {
-		return this.filterTreeExts(this.filterTreeFolders(tree, ['site/content']), ['md', 'html']);
+		return [
+			// ...this.filterTreeExts(this.filterTreeFolders(tree, ['site/data']), ['yml']),
+			...this.filterTreeExts(this.filterTreeFolders(tree, ['site/content']), ['md', 'html']),
+		];
 	}
 
 	async findCollections(config) {
@@ -215,7 +221,10 @@ class CmsProviderJekyllOnNetlify extends CmsProvider {
 	}
 
 	async findPages(tree, cms) {
-		return this.filterTreeExts(this.filterTreeNotFolders(tree, ['_data', '_includes', '_layouts']), ['md', 'html']);
+		return [
+			// ...this.filterTreeExts(this.filterTreeFolders(tree, ['_data']), ['yml']),
+			...this.filterTreeExts(this.filterTreeNotFolders(tree, ['_data', '_includes', '_layouts']), ['md', 'html']),
+		];
 	}
 
 	async findCollections(config) {
