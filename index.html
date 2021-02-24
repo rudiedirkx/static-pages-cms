@@ -215,6 +215,7 @@ $elContentForm.closest('form').addEventListener('submit', async e => {
 		console.log('0. head. ', head);
 
 		if (head.object.sha != cms.commit) {
+			// Check diff for changed files: `https://api.github.com/repos/rudiedirkx2/netlify1-hugo/compare/${cms.commit}...${head.object.sha}`
 			throw new Error(`Page state is old. Newer commits exist:\n\n${cms.commit}...${head.object.sha}`);
 		}
 
