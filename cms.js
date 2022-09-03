@@ -291,10 +291,19 @@ console.log(this.newFiles.slice(-1)[0]);
 
 	static parseContent(text) {
 		const frontMatter = text.match(/^---[\r\n]+([\w\W]+?)---([\r\n]|$)/);
-		if (!frontMatter) throw new Error("Can't extract front matter from text:\n" + text);
+		if (frontMatter) {
+			const body = text.substr(frontMatter[0].length).trim();
+			return {body, ...this.parseYaml(frontMatter[1])};
+		}
 
-		const body = text.substr(frontMatter[0].length).trim();
-		return {body, ...this.parseYaml(frontMatter[1])};
+		if (text.trim().substr(0, 2) == '- ') {
+			const list = this.parseYaml(text);
+			if (list instanceof Array) {
+				return {list};
+			}
+		}
+
+		throw new Error("Can't extract front matter from text:\n" + text);
 	}
 
 	static parseConfig(text) {
